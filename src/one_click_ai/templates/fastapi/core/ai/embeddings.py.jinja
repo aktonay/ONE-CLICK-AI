@@ -1,0 +1,15 @@
+"""
+Embedding generation helper.
+Wraps the current LLM provider's embed() method.
+"""
+
+from typing import List
+from app.config import get_settings
+from app.core.ai.factory import get_llm_client
+
+
+async def generate_embeddings(texts: List[str]) -> List[List[float]]:
+    """Generate embeddings using the configured provider."""
+    settings = get_settings()
+    client = get_llm_client(settings.DEFAULT_LLM_PROVIDER)
+    return await client.embed(texts)

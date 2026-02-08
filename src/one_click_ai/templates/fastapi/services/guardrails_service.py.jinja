@@ -1,0 +1,76 @@
+{# Guardrails Service #}
+"""
+Guardrails service layer — unified safety checks.
+"""
+
+import logging
+from typing import Any, Dict
+
+logger = logging.getLogger(__name__)
+
+
+class GuardrailsService:
+    """Unified AI safety service — apply all guardrails to input/output."""
+
+    def __init__(self):
+        from app.guardrails.content_filter import ContentFilter
+        from app.guardrails.pii_detector import PIIDetector
+        from app.guardrails.prompt_injection import PromptInjectionDetector
+        from app.guardrails.audit_logger import AuditLogger
+
+        self.content_filter = ContentFilter()
+        self.pii_detector = PIIDetector()
+        self.injection_detector = PromptInjectionDetector()
+        self.audit = AuditLogger()
+
+    async def check_input(self, text: str, user_id: str = None) -> Dict[str, Any]:
+        """Run all input guardrails before sending to LLM."""
+        result = {"passed": True, "actions": []}
+
+        # 1. Prompt injection check
+        injection = self.injection_detector.detect(text)
+        if not injection["is_safe"]:
+            result["passed"] = False
+            result["actions"].append("blocked_injection")
+            self.audit.log("injection_blocked", user_id=user_id, request_data={"text": text[:200]})
+            return result
+
+        # 2. PII scan
+        pii = self.pii_detector.scan_before_llm(text)
+        if pii["action"] == "anonymized":
+            result["safe_text"] = pii["safe_prompt"]
+            result["actions"].append("pii_anonymized")
+        else:
+            result["safe_text"] = text
+
+        # 3. Content check
+        content = self.content_filter.check(text)
+        if not content["is_safe"]:
+            result["passed"] = False
+            result["actions"].append("blocked_content")
+
+        self.audit.log("input_check", user_id=user_id, guardrail_results=result)
+        return result
+
+    async def check_output(self, response: str, user_id: str = None) -> Dict[str, Any]:
+        """Run all output guardrails before sending to user."""
+        result = {"passed": True, "actions": []}
+
+        # Content safety
+        content = self.content_filter.filter_response(response)
+        if content["original_blocked"]:
+            result["passed"] = False
+            result["safe_response"] = content["safe_response"]
+            result["actions"].append("output_filtered")
+        else:
+            result["safe_response"] = response
+
+        # PII in output
+        pii = self.pii_detector.detect(response)
+        if pii["has_pii"]:
+            anon = self.pii_detector.anonymize(response)
+            result["safe_response"] = anon["anonymized_text"]
+            result["actions"].append("output_pii_removed")
+
+        self.audit.log("output_check", user_id=user_id, guardrail_results=result)
+        return result

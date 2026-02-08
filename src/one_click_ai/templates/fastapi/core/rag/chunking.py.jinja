@@ -1,0 +1,110 @@
+"""Text chunking strategies for RAG."""
+
+from typing import List
+from dataclasses import dataclass
+
+
+@dataclass
+class Chunk:
+    text: str
+    index: int
+    metadata: dict
+
+
+def chunk_text(
+    text: str,
+    chunk_size: int = 512,
+    chunk_overlap: int = 128,
+    strategy: str = "recursive",
+    metadata: dict | None = None,
+) -> List[Chunk]:
+    """Split text into chunks using the specified strategy."""
+    if strategy == "fixed":
+        return _fixed_chunks(text, chunk_size, chunk_overlap, metadata or {})
+    elif strategy == "sentence":
+        return _sentence_chunks(text, chunk_size, chunk_overlap, metadata or {})
+    else:  # recursive (default)
+        return _recursive_chunks(text, chunk_size, chunk_overlap, metadata or {})
+
+
+def _fixed_chunks(text: str, size: int, overlap: int, meta: dict) -> List[Chunk]:
+    """Fixed-size character chunks."""
+    chunks = []
+    start = 0
+    idx = 0
+    while start < len(text):
+        end = start + size
+        chunks.append(Chunk(text=text[start:end], index=idx, metadata={**meta}))
+        start = end - overlap
+        idx += 1
+    return chunks
+
+
+def _sentence_chunks(text: str, size: int, overlap: int, meta: dict) -> List[Chunk]:
+    """Sentence-aware chunking."""
+    import re
+
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    chunks = []
+    current = ""
+    idx = 0
+
+    for sentence in sentences:
+        if len(current) + len(sentence) > size and current:
+            chunks.append(Chunk(text=current.strip(), index=idx, metadata={**meta}))
+            # Keep overlap
+            words = current.split()
+            overlap_words = words[-(overlap // 5):] if len(words) > (overlap // 5) else words
+            current = " ".join(overlap_words) + " " + sentence
+            idx += 1
+        else:
+            current += " " + sentence
+
+    if current.strip():
+        chunks.append(Chunk(text=current.strip(), index=idx, metadata={**meta}))
+
+    return chunks
+
+
+def _recursive_chunks(text: str, size: int, overlap: int, meta: dict) -> List[Chunk]:
+    """Recursive text splitting — tries paragraph, sentence, then character."""
+    separators = ["\n\n", "\n", ". ", " ", ""]
+    return _split_recursive(text, separators, size, overlap, meta)
+
+
+def _split_recursive(
+    text: str, separators: List[str], size: int, overlap: int, meta: dict
+) -> List[Chunk]:
+    if len(text) <= size:
+        return [Chunk(text=text, index=0, metadata={**meta})]
+
+    sep = separators[0]
+    parts = text.split(sep) if sep else list(text)
+    chunks = []
+    current = ""
+    idx = 0
+
+    for part in parts:
+        candidate = current + sep + part if current else part
+        if len(candidate) > size and current:
+            chunks.append(Chunk(text=current.strip(), index=idx, metadata={**meta}))
+            current = part
+            idx += 1
+        else:
+            current = candidate
+
+    if current.strip():
+        chunks.append(Chunk(text=current.strip(), index=idx, metadata={**meta}))
+
+    # If any chunk is still too large and we have more separators, recurse
+    if len(separators) > 1:
+        refined = []
+        for chunk in chunks:
+            if len(chunk.text) > size:
+                sub = _split_recursive(chunk.text, separators[1:], size, overlap, meta)
+                refined.extend(sub)
+            else:
+                refined.append(chunk)
+        chunks = refined
+
+    return chunks

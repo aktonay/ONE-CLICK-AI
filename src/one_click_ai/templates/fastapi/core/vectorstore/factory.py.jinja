@@ -1,0 +1,75 @@
+"""Vector store factory — returns the configured backend."""
+
+from app.config import get_settings
+from app.core.vectorstore.base import BaseVectorStore
+import logging
+
+logger = logging.getLogger(__name__)
+
+_store: BaseVectorStore | None = None
+
+
+async def get_vector_store() -> BaseVectorStore:
+    global _store
+    if _store is not None:
+        return _store
+
+    settings = get_settings()
+    backend = settings.VECTOR_STORE
+
+    if backend == "faiss":
+        from app.core.vectorstore.faiss_store import FAISSVectorStore
+
+        _store = FAISSVectorStore(
+            index_dir=settings.FAISS_INDEX_DIR,
+            dimension=settings.EMBEDDING_DIMENSION,
+        )
+    {% if context.get("pinecone", False) %}
+    elif backend == "pinecone":
+        from app.core.vectorstore.pinecone_store import PineconeVectorStore
+
+        _store = PineconeVectorStore()
+    {% endif %}
+    {% if context.get("qdrant", False) %}
+    elif backend == "qdrant":
+        from app.core.vectorstore.qdrant_store import QdrantVectorStore
+
+        _store = QdrantVectorStore()
+    {% endif %}
+    {% if context.get("weaviate", False) %}
+    elif backend == "weaviate":
+        from app.core.vectorstore.weaviate_store import WeaviateVectorStore
+
+        _store = WeaviateVectorStore()
+    {% endif %}
+    {% if context.get("chroma", False) %}
+    elif backend == "chroma":
+        from app.core.vectorstore.chroma_store import ChromaVectorStore
+
+        _store = ChromaVectorStore()
+    {% endif %}
+    {% if context.get("milvus", False) %}
+    elif backend == "milvus":
+        from app.core.vectorstore.milvus_store import MilvusVectorStore
+
+        _store = MilvusVectorStore()
+    {% endif %}
+    {% if context.get("pgvector", False) %}
+    elif backend == "pgvector":
+        from app.core.vectorstore.pgvector_store import PGVectorStore
+
+        _store = PGVectorStore()
+    {% endif %}
+    else:
+        raise ValueError(f"Unknown vector store: {backend}")
+
+    await _store.initialize()
+    logger.info("Vector store ready: %s", backend)
+    return _store
+
+
+async def close_vector_store() -> None:
+    global _store
+    if _store:
+        await _store.close()
+        _store = None

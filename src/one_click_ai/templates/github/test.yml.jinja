@@ -1,0 +1,79 @@
+name: Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+
+    {% if context.get("postgres", False) or context.get("redis", False) %}
+    services:
+      {% if context.get("postgres", False) %}
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: test_db
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      {% endif %}
+      {% if context.get("redis", False) %}
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      {% endif %}
+    {% endif %}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python {% raw %}${{ matrix.python-version }}{% endraw %}
+        uses: actions/setup-python@v5
+        with:
+          python-version: {% raw %}${{ matrix.python-version }}{% endraw %}
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Lint
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      - name: Type check
+        run: uv run mypy app/ --ignore-missing-imports
+
+      - name: Test
+        env:
+          DEBUG: "true"
+          LLM_PROVIDER: "openai"
+          OPENAI_API_KEY: "sk-test"
+          {% if context.get("postgres", False) %}
+          DATABASE_URL: "postgresql+asyncpg://postgres:postgres@localhost:5432/test_db"
+          {% endif %}
+          {% if context.get("redis", False) %}
+          REDIS_URL: "redis://localhost:6379/0"
+          {% endif %}
+        run: uv run pytest tests/ -v --tb=short

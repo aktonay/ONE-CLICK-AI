@@ -1,0 +1,81 @@
+{# Face Detector #}
+"""
+Face detection & recognition.
+"""
+
+import logging
+from typing import Any, Dict, List
+import numpy as np
+
+logger = logging.getLogger(__name__)
+
+
+class FaceDetector:
+    """Face detection and recognition using face-recognition & MediaPipe."""
+
+    def __init__(self, backend: str = "face_recognition"):
+        self.backend = backend
+
+    def detect(self, image_path: str) -> Dict[str, Any]:
+        """Detect faces in an image."""
+        if self.backend == "face_recognition":
+            return self._fr_detect(image_path)
+        return self._mediapipe_detect(image_path)
+
+    def _fr_detect(self, image_path: str) -> Dict[str, Any]:
+        import face_recognition
+        image = face_recognition.load_image_file(image_path)
+        locations = face_recognition.face_locations(image, model="hog")
+        encodings = face_recognition.face_encodings(image, locations)
+
+        faces = []
+        for loc, enc in zip(locations, encodings):
+            top, right, bottom, left = loc
+            faces.append({
+                "bbox": [left, top, right, bottom],
+                "encoding_size": len(enc),
+            })
+
+        return {"faces": faces, "count": len(faces)}
+
+    def _mediapipe_detect(self, image_path: str) -> Dict[str, Any]:
+        import mediapipe as mp
+        import cv2
+
+        mp_face = mp.solutions.face_detection
+        image = cv2.imread(image_path)
+        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+        with mp_face.FaceDetection(model_selection=1, min_detection_confidence=0.5) as detector:
+            results = detector.process(rgb)
+
+        faces = []
+        if results.detections:
+            h, w = image.shape[:2]
+            for det in results.detections:
+                bb = det.location_data.relative_bounding_box
+                faces.append({
+                    "bbox": [int(bb.xmin * w), int(bb.ymin * h),
+                             int((bb.xmin + bb.width) * w), int((bb.ymin + bb.height) * h)],
+                    "confidence": float(det.score[0]),
+                })
+
+        return {"faces": faces, "count": len(faces)}
+
+    def compare(self, image1_path: str, image2_path: str, tolerance: float = 0.6) -> Dict[str, Any]:
+        """Compare faces between two images."""
+        import face_recognition
+        img1 = face_recognition.load_image_file(image1_path)
+        img2 = face_recognition.load_image_file(image2_path)
+        enc1 = face_recognition.face_encodings(img1)
+        enc2 = face_recognition.face_encodings(img2)
+
+        if not enc1 or not enc2:
+            return {"match": False, "error": "Could not find faces in one or both images"}
+
+        distance = float(face_recognition.face_distance(enc1, enc2[0])[0])
+        return {
+            "match": distance <= tolerance,
+            "distance": distance,
+            "tolerance": tolerance,
+        }

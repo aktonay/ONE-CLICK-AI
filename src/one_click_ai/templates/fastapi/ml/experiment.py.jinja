@@ -1,0 +1,83 @@
+{# ML Experiment Tracking #}
+"""
+Experiment tracking — MLflow and Weights & Biases integration.
+"""
+
+import logging
+from typing import Any, Dict, Optional
+
+logger = logging.getLogger(__name__)
+
+
+class ExperimentTracker:
+    """Unified experiment tracking interface."""
+
+    def __init__(self, backend: str = "mlflow", project_name: str = "{{ project_name }}"):
+        self.backend = backend
+        self.project_name = project_name
+        self._run = None
+
+{% if mlops %}
+    def start_run(self, run_name: str, config: Dict[str, Any] = None):
+        """Start a new experiment run."""
+        if self.backend == "mlflow":
+            import mlflow
+            mlflow.set_experiment(self.project_name)
+            self._run = mlflow.start_run(run_name=run_name)
+            if config:
+                mlflow.log_params(config)
+        elif self.backend == "wandb":
+            import wandb
+            self._run = wandb.init(project=self.project_name, name=run_name, config=config)
+        logger.info(f"Started experiment run: {run_name}")
+
+    def log_metric(self, key: str, value: float, step: Optional[int] = None):
+        """Log a single metric."""
+        if self.backend == "mlflow":
+            import mlflow
+            mlflow.log_metric(key, value, step=step)
+        elif self.backend == "wandb":
+            import wandb
+            wandb.log({key: value}, step=step)
+
+    def log_metrics(self, metrics: Dict[str, float], step: Optional[int] = None):
+        """Log multiple metrics."""
+        for key, value in metrics.items():
+            self.log_metric(key, value, step=step)
+
+    def log_artifact(self, local_path: str, artifact_name: Optional[str] = None):
+        """Log a file artifact."""
+        if self.backend == "mlflow":
+            import mlflow
+            mlflow.log_artifact(local_path)
+        elif self.backend == "wandb":
+            import wandb
+            wandb.save(local_path)
+
+    def end_run(self):
+        """End the current run."""
+        if self.backend == "mlflow":
+            import mlflow
+            mlflow.end_run()
+        elif self.backend == "wandb":
+            import wandb
+            wandb.finish()
+        self._run = None
+        logger.info("Experiment run ended")
+{% else %}
+    def start_run(self, run_name: str, config: Dict[str, Any] = None):
+        logger.info(f"[local] Started run: {run_name}")
+
+    def log_metric(self, key: str, value: float, step: Optional[int] = None):
+        logger.info(f"[local] {key}={value}" + (f" step={step}" if step else ""))
+
+    def log_metrics(self, metrics: Dict[str, float], step: Optional[int] = None):
+        for k, v in metrics.items():
+            self.log_metric(k, v, step)
+
+    def log_artifact(self, local_path: str, artifact_name: Optional[str] = None):
+        logger.info(f"[local] Artifact: {local_path}")
+
+    def end_run(self):
+        logger.info("[local] Run ended")
+{% endif %}

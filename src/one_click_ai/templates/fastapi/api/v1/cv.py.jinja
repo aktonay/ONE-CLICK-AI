@@ -1,0 +1,123 @@
+{# CV API Routes #}
+"""
+Computer Vision API endpoints.
+"""
+
+from fastapi import APIRouter, HTTPException, UploadFile, File
+from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Optional
+import tempfile
+import shutil
+
+router = APIRouter(prefix="/cv", tags=["Computer Vision"])
+
+
+# ── Schemas ──────────────────────────────────────────────────────────
+
+class DetectionRequest(BaseModel):
+    confidence: float = 0.5
+    iou_threshold: float = 0.45
+    classes: Optional[List[int]] = None
+
+
+class DetectionResponse(BaseModel):
+    detections: List[Dict[str, Any]]
+    count: int
+    source: str
+
+
+class SegmentRequest(BaseModel):
+    points: Optional[List[List[int]]] = None
+    labels: Optional[List[int]] = None
+    box: Optional[List[int]] = None
+
+
+class OCRResponse(BaseModel):
+    full_text: str
+    blocks: List[Dict[str, Any]]
+    block_count: int
+
+
+class FaceResponse(BaseModel):
+    faces: List[Dict[str, Any]]
+    count: int
+
+
+{% if image_gen %}
+class GenerateImageRequest(BaseModel):
+    prompt: str
+    negative_prompt: str = "low quality, blurry"
+    width: int = 1024
+    height: int = 1024
+    steps: int = 30
+    seed: Optional[int] = None
+{% endif %}
+
+
+# ── Endpoints ────────────────────────────────────────────────────────
+
+{% if yolo %}
+@router.post("/detect", response_model=DetectionResponse)
+async def detect_objects(file: UploadFile = File(...), confidence: float = 0.5):
+    """Detect objects in uploaded image using YOLO."""
+    from app.cv.yolo_detector import YOLODetector
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+        shutil.copyfileobj(file.file, tmp)
+        tmp_path = tmp.name
+    detector = YOLODetector()
+    result = detector.detect(tmp_path, confidence=confidence)
+    return DetectionResponse(**result)
+{% endif %}
+
+{% if sam %}
+@router.post("/segment")
+async def segment_image(file: UploadFile = File(...), request: SegmentRequest = None):
+    """Segment image using SAM2."""
+    from app.cv.sam_segmenter import SAMSegmenter
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+        shutil.copyfileobj(file.file, tmp)
+        tmp_path = tmp.name
+    segmenter = SAMSegmenter()
+    points = request.points if request else None
+    return segmenter.segment(tmp_path, points=points)
+{% endif %}
+
+{% if ocr %}
+@router.post("/ocr", response_model=OCRResponse)
+async def extract_text(file: UploadFile = File(...), lang: str = "en"):
+    """Extract text from image via OCR."""
+    from app.cv.ocr_engine import OCREngine
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+        shutil.copyfileobj(file.file, tmp)
+        tmp_path = tmp.name
+    engine = OCREngine(lang=lang)
+    return OCRResponse(**engine.extract(tmp_path))
+{% endif %}
+
+{% if face_detection %}
+@router.post("/faces", response_model=FaceResponse)
+async def detect_faces(file: UploadFile = File(...)):
+    """Detect faces in image."""
+    from app.cv.face_detector import FaceDetector
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+        shutil.copyfileobj(file.file, tmp)
+        tmp_path = tmp.name
+    detector = FaceDetector()
+    return FaceResponse(**detector.detect(tmp_path))
+{% endif %}
+
+{% if image_gen %}
+@router.post("/generate")
+async def generate_image(request: GenerateImageRequest):
+    """Generate image from text prompt."""
+    from app.cv.image_generator import ImageGenerator
+    gen = ImageGenerator()
+    return gen.generate(
+        prompt=request.prompt,
+        negative_prompt=request.negative_prompt,
+        width=request.width,
+        height=request.height,
+        steps=request.steps,
+        seed=request.seed,
+    )
+{% endif %}

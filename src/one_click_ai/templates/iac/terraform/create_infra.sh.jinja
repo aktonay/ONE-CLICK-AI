@@ -1,0 +1,15 @@
+#!/bin/bash
+# Create infrastructure with Terraform
+set -e
+
+echo "🏗️  Creating infrastructure for {{ project_name }}..."
+
+cd "$(dirname "$0")"
+
+terraform init
+terraform plan -out=tfplan
+terraform apply tfplan
+
+echo ""
+echo "✅ Infrastructure created!"
+terraform output

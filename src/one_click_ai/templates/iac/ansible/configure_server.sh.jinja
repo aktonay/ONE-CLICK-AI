@@ -1,0 +1,11 @@
+#!/bin/bash
+# Configure server using Ansible
+set -e
+
+echo "🔧 Configuring server for {{ project_name }}..."
+
+cd "$(dirname "$0")"
+
+ansible-playbook -i hosts.ini playbook.yml
+
+echo "✅ Server configured!"

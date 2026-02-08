@@ -1,0 +1,39 @@
+"""Enumerations used across the project."""
+
+from enum import Enum
+
+
+class LLMProvider(str, Enum):
+    openai = "openai"
+    anthropic = "anthropic"
+    google = "google"
+    groq = "groq"
+    grok = "grok"
+    cohere = "cohere"
+    mistral = "mistral"
+    ollama = "ollama"
+
+
+class VectorStoreType(str, Enum):
+    faiss = "faiss"
+    pinecone = "pinecone"
+    qdrant = "qdrant"
+    weaviate = "weaviate"
+    chroma = "chroma"
+    milvus = "milvus"
+    pgvector = "pgvector"
+
+
+{% if context.get("rag", False) %}
+class ChunkStrategy(str, Enum):
+    fixed = "fixed"
+    sentence = "sentence"
+    recursive = "recursive"
+{% endif %}
+
+{% if context.get("search", False) %}
+class SearchProvider(str, Enum):
+    tavily = "tavily"
+    serper = "serper"
+    duckduckgo = "duckduckgo"
+{% endif %}

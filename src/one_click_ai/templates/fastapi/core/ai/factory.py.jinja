@@ -1,0 +1,45 @@
+"""
+LLM Provider Factory.
+Returns the correct client based on config.
+"""
+
+from app.core.ai.llm_client import BaseLLMClient
+from functools import lru_cache
+
+_clients: dict[str, BaseLLMClient] = {}
+
+
+def get_llm_client(provider: str | None = None) -> BaseLLMClient:
+    """Get or create an LLM client for the given provider."""
+    if provider is None:
+        from app.config import get_settings
+        provider = get_settings().DEFAULT_LLM_PROVIDER
+
+    if provider not in _clients:
+        _clients[provider] = _create_client(provider)
+    return _clients[provider]
+
+
+def _create_client(provider: str) -> BaseLLMClient:
+    provider = provider.lower()
+
+{% if openai %}
+    if provider == "openai":
+        from app.core.ai.providers.openai_client import OpenAIClient
+        return OpenAIClient()
+{% endif %}
+{% if anthropic %}
+    if provider == "anthropic":
+        from app.core.ai.providers.anthropic_client import AnthropicClient
+        return AnthropicClient()
+{% endif %}
+{% if google %}
+    if provider == "google":
+        from app.core.ai.providers.google_client import GoogleClient
+        return GoogleClient()
+{% endif %}
+
+    raise ValueError(
+        f"Unknown LLM provider: '{provider}'. "
+        f"Available: {{ [p for p in ['openai', 'anthropic', 'google', 'groq', 'grok', 'cohere', 'mistral', 'ollama'] if context.get(p, False)] }}"
+    )

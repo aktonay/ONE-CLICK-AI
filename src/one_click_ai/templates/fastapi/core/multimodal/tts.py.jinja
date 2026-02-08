@@ -1,0 +1,59 @@
+"""Text-to-Speech abstraction layer."""
+
+from typing import Optional
+from app.config import get_settings
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class TTSClient:
+    """Text-to-Speech client — delegates to the configured provider."""
+
+    def __init__(self):
+        self.settings = get_settings()
+        self.provider = self.settings.TTS_PROVIDER
+
+    async def synthesize(
+        self, text: str, voice_id: Optional[str] = None
+    ) -> bytes:
+        if self.provider == "elevenlabs":
+            return await self._elevenlabs_tts(text, voice_id)
+        elif self.provider == "openai":
+            return await self._openai_tts(text, voice_id)
+        else:
+            return await self._openai_tts(text, voice_id)
+
+    async def _openai_tts(self, text: str, voice_id: Optional[str]) -> bytes:
+        import openai
+
+        client = openai.AsyncOpenAI(api_key=self.settings.OPENAI_API_KEY)
+        response = await client.audio.speech.create(
+            model="tts-1",
+            voice=voice_id or "alloy",
+            input=text,
+        )
+        return response.content
+
+    async def _elevenlabs_tts(self, text: str, voice_id: Optional[str]) -> bytes:
+        try:
+            import httpx
+
+            voice = voice_id or self.settings.ELEVENLABS_VOICE_ID
+            url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice}"
+            headers = {
+                "xi-api-key": self.settings.ELEVENLABS_API_KEY,
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "text": text,
+                "model_id": "eleven_multilingual_v2",
+                "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
+            }
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(url, json=payload, headers=headers, timeout=30)
+                resp.raise_for_status()
+                return resp.content
+        except Exception as e:
+            logger.error("ElevenLabs TTS error: %s", e)
+            raise

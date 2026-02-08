@@ -1,0 +1,36 @@
+"""Health check script — verify all services are running."""
+
+import asyncio
+import httpx
+import sys
+
+
+async def check():
+    checks = {}
+    base = "http://localhost:8000"
+
+    # API health
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.get(f"{base}/api/v1/health", timeout=5)
+            checks["api"] = r.status_code == 200
+    except Exception:
+        checks["api"] = False
+
+    # Print results
+    all_ok = True
+    for name, status in checks.items():
+        icon = "✅" if status else "❌"
+        print(f"  {icon} {name}")
+        if not status:
+            all_ok = False
+
+    if all_ok:
+        print("\n🟢 All checks passed!")
+    else:
+        print("\n🔴 Some checks failed!")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    asyncio.run(check())

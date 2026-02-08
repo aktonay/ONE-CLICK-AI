@@ -1,0 +1,43 @@
+"""Web search endpoints."""
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
+from typing import List, Optional
+
+router = APIRouter()
+
+
+class SearchRequest(BaseModel):
+    query: str = Field(..., min_length=1, max_length=1000)
+    max_results: int = Field(default=5, ge=1, le=20)
+
+
+class SearchResult(BaseModel):
+    title: str
+    url: str
+    snippet: str
+    score: float = 0.0
+
+
+class SearchResponse(BaseModel):
+    query: str
+    results: List[SearchResult]
+    answer: Optional[str] = None
+
+
+@router.post("/", response_model=SearchResponse)
+async def web_search(request: SearchRequest):
+    """
+    Search the web and optionally generate an AI-summarised answer.
+    """
+    from app.services.search_service import SearchService
+
+    try:
+        service = SearchService()
+        result = await service.search(
+            query=request.query,
+            max_results=request.max_results,
+        )
+        return SearchResponse(**result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

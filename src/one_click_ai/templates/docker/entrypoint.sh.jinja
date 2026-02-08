@@ -1,0 +1,31 @@
+#!/bin/bash
+set -e
+
+echo "🚀 Starting {{ project_name }}..."
+
+# Wait for databases
+{% if context.get("postgres", False) %}
+echo "⏳ Waiting for PostgreSQL..."
+while ! pg_isready -h ${POSTGRES_HOST:-postgres} -p 5432 -q 2>/dev/null; do
+    sleep 1
+done
+echo "✅ PostgreSQL ready"
+{% endif %}
+
+{% if context.get("redis", False) %}
+echo "⏳ Waiting for Redis..."
+while ! redis-cli -h ${REDIS_HOST:-redis} ping 2>/dev/null | grep -q PONG; do
+    sleep 1
+done
+echo "✅ Redis ready"
+{% endif %}
+
+# Create data dirs
+mkdir -p data/vector_indexes data/storage logs
+
+# Start the app
+exec uvicorn app.main:app \
+    --host ${HOST:-0.0.0.0} \
+    --port ${PORT:-8000} \
+    --workers ${WORKERS:-1} \
+    --log-level ${LOG_LEVEL:-info}

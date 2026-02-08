@@ -1,0 +1,47 @@
+"""Voice-to-Voice pipeline — real-time STT → LLM → TTS."""
+
+from typing import AsyncIterator, Dict
+from app.core.multimodal.stt import STTClient
+from app.core.multimodal.tts import TTSClient
+from app.core.ai.factory import get_llm_client
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class VoiceToVoicePipeline:
+    """Process audio input → generate text → produce audio output."""
+
+    def __init__(self):
+        self.stt = STTClient()
+        self.tts = TTSClient()
+        self.llm = get_llm_client()
+
+    async def process(
+        self,
+        audio_bytes: bytes,
+        system_prompt: str = "You are a helpful voice assistant. Keep responses concise.",
+        session_history: list | None = None,
+    ) -> Dict:
+        # 1. Transcribe
+        transcription = await self.stt.transcribe(audio_bytes)
+        user_text = transcription["text"]
+
+        # 2. Build messages
+        messages = [{"role": "system", "content": system_prompt}]
+        if session_history:
+            messages.extend(session_history)
+        messages.append({"role": "user", "content": user_text})
+
+        # 3. Generate response
+        result = await self.llm.chat(messages=messages, temperature=0.8, max_tokens=300)
+        response_text = result["content"]
+
+        # 4. Synthesize audio
+        audio_response = await self.tts.synthesize(response_text)
+
+        return {
+            "transcription": user_text,
+            "response_text": response_text,
+            "audio_response": audio_response,
+        }

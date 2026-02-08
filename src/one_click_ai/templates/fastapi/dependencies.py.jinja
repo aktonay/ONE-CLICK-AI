@@ -1,0 +1,10 @@
+"""
+Dependency injection helpers for FastAPI.
+"""
+
+from app.config import get_settings, Settings
+from app.core.ai.factory import get_llm_client
+
+
+def get_settings_dep() -> Settings:
+    return get_settings()

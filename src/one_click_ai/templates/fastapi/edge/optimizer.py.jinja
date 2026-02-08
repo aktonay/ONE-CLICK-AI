@@ -1,0 +1,103 @@
+{# Edge AI Optimizer #}
+"""
+Model optimization — quantization, pruning, knowledge distillation.
+"""
+
+import logging
+from typing import Any, Dict, Optional
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+
+class ModelOptimizer:
+    """Optimize models for edge deployment."""
+
+{% if quantization %}
+    @staticmethod
+    def quantize_onnx(
+        model_path: str,
+        output_path: str = "models/edge/model_quantized.onnx",
+        quantize_type: str = "dynamic",  # dynamic, static, qat
+    ) -> Dict[str, Any]:
+        """Quantize ONNX model (INT8)."""
+        from onnxruntime.quantization import quantize_dynamic, quantize_static, QuantType
+        import onnx
+
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        original_size = Path(model_path).stat().st_size
+
+        if quantize_type == "dynamic":
+            quantize_dynamic(
+                model_path,
+                output_path,
+                weight_type=QuantType.QUInt8,
+            )
+        else:
+            logger.warning(f"Static/QAT quantization requires calibration data")
+            quantize_dynamic(model_path, output_path, weight_type=QuantType.QUInt8)
+
+        quantized_size = Path(output_path).stat().st_size
+        compression = 1 - (quantized_size / original_size)
+
+        logger.info(f"Quantized model: {original_size / 1e6:.1f}MB → {quantized_size / 1e6:.1f}MB ({compression:.1%} smaller)")
+        return {
+            "output_path": output_path,
+            "original_size_mb": original_size / 1e6,
+            "quantized_size_mb": quantized_size / 1e6,
+            "compression_ratio": compression,
+        }
+{% endif %}
+
+{% if pytorch %}
+    @staticmethod
+    def quantize_pytorch(model, calibration_data=None, backend: str = "x86"):
+        """Quantize PyTorch model."""
+        import torch
+
+        model.eval()
+        quantized = torch.quantization.quantize_dynamic(
+            model, {torch.nn.Linear, torch.nn.LSTM, torch.nn.Conv2d}, dtype=torch.qint8
+        )
+        logger.info("PyTorch dynamic quantization applied")
+        return quantized
+
+    @staticmethod
+    def prune_pytorch(model, amount: float = 0.3):
+        """Prune PyTorch model (unstructured)."""
+        import torch
+        import torch.nn.utils.prune as prune
+
+        for name, module in model.named_modules():
+            if isinstance(module, (torch.nn.Linear, torch.nn.Conv2d)):
+                prune.l1_unstructured(module, name="weight", amount=amount)
+                prune.remove(module, "weight")
+
+        total = sum(p.numel() for p in model.parameters())
+        zeros = sum((p == 0).sum().item() for p in model.parameters())
+        logger.info(f"Pruned {zeros}/{total} params ({zeros / total:.1%} sparsity)")
+        return model
+{% endif %}
+
+{% if quantization %}
+    @staticmethod
+    def optimize_with_optimum(
+        model_name: str,
+        output_dir: str = "models/edge/optimized",
+        quantize: bool = True,
+    ) -> str:
+        """Optimize HuggingFace transformers model with Optimum."""
+        from optimum.onnxruntime import ORTModelForSequenceClassification, ORTQuantizer
+        from optimum.onnxruntime.configuration import AutoQuantizationConfig
+
+        model = ORTModelForSequenceClassification.from_pretrained(model_name, export=True)
+        model.save_pretrained(output_dir)
+
+        if quantize:
+            quantizer = ORTQuantizer.from_pretrained(output_dir)
+            qconfig = AutoQuantizationConfig.avx512_vnni(is_static=False)
+            quantizer.quantize(save_dir=output_dir, quantization_config=qconfig)
+
+        logger.info(f"Optimum optimization complete: {output_dir}")
+        return output_dir
+{% endif %}

@@ -1,0 +1,55 @@
+"""Short-term memory — in-session conversation history."""
+
+from typing import Dict, List, Optional
+from collections import defaultdict
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class ShortTermMemory:
+    """Maintains conversation history per session in memory.
+
+    For production, back with Redis (see session_service).
+    """
+
+    def __init__(self, max_messages: int = 50):
+        self.max_messages = max_messages
+        self._store: Dict[str, List[Dict]] = defaultdict(list)
+
+    async def add(self, session_id: str, message: Dict) -> None:
+        self._store[session_id].append(message)
+        # Sliding window
+        if len(self._store[session_id]) > self.max_messages:
+            self._store[session_id] = self._store[session_id][-self.max_messages:]
+
+    async def get(self, session_id: str, limit: Optional[int] = None) -> List[Dict]:
+        messages = self._store.get(session_id, [])
+        if limit:
+            return messages[-limit:]
+        return messages
+
+    async def clear(self, session_id: str) -> None:
+        self._store.pop(session_id, None)
+
+    async def get_summary(self, session_id: str) -> str:
+        """Generate a brief summary of conversation history."""
+        messages = await self.get(session_id)
+        if not messages:
+            return ""
+
+        from app.core.ai.factory import get_llm_client
+
+        client = get_llm_client()
+        conversation_text = "\n".join(
+            f"{m['role']}: {m['content']}" for m in messages
+        )
+        result = await client.chat(
+            messages=[
+                {"role": "system", "content": "Summarize this conversation in 2-3 sentences."},
+                {"role": "user", "content": conversation_text},
+            ],
+            temperature=0.3,
+            max_tokens=200,
+        )
+        return result["content"]

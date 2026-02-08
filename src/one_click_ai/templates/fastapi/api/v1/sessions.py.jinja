@@ -1,0 +1,58 @@
+"""Session management endpoints."""
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
+from typing import Optional, List, Dict
+import uuid
+
+router = APIRouter()
+
+
+class CreateSessionRequest(BaseModel):
+    user_id: Optional[str] = None
+    metadata: Dict = {}
+
+
+class SessionResponse(BaseModel):
+    session_id: str
+    user_id: Optional[str] = None
+    created_at: str = ""
+
+
+class MessageEntry(BaseModel):
+    role: str
+    content: str
+    timestamp: str = ""
+
+
+@router.post("/", response_model=SessionResponse)
+async def create_session(request: CreateSessionRequest):
+    """Create a new conversation session."""
+    from app.services.session_service import SessionService
+
+    service = SessionService()
+    result = await service.create(
+        user_id=request.user_id,
+        metadata=request.metadata,
+    )
+    return SessionResponse(**result)
+
+
+@router.get("/{session_id}/history")
+async def get_history(session_id: str, limit: int = 50):
+    """Retrieve conversation history for a session."""
+    from app.services.session_service import SessionService
+
+    service = SessionService()
+    history = await service.get_history(session_id, limit=limit)
+    return {"session_id": session_id, "messages": history}
+
+
+@router.delete("/{session_id}")
+async def delete_session(session_id: str):
+    """Delete a session and its history."""
+    from app.services.session_service import SessionService
+
+    service = SessionService()
+    await service.delete(session_id)
+    return {"deleted": session_id}

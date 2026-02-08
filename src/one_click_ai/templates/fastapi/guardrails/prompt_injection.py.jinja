@@ -1,0 +1,96 @@
+{# Prompt Injection Detector #}
+"""
+Detect prompt injection, jailbreak attempts, and adversarial inputs.
+"""
+
+import logging
+import re
+from typing import Any, Dict, List
+
+logger = logging.getLogger(__name__)
+
+# Known prompt injection patterns
+INJECTION_PATTERNS = [
+    r"ignore\s+(all\s+)?previous\s+instructions",
+    r"ignore\s+(all\s+)?above\s+instructions",
+    r"forget\s+(all\s+)?previous",
+    r"you\s+are\s+now\s+(\w+)",
+    r"act\s+as\s+(if\s+)?you",
+    r"pretend\s+(you\s+are|to\s+be)",
+    r"system\s*prompt",
+    r"jailbreak",
+    r"do\s+anything\s+now",
+    r"developer\s+mode",
+    r"bypass\s+(all\s+)?restrictions",
+    r"override\s+(all\s+)?rules",
+    r"disregard\s+(all\s+)?previous",
+    r"new\s+instructions?:?",
+    r"\[INST\]",
+    r"<\|im_start\|>",
+    r"### (system|instruction|human|assistant)",
+    r"ADMIN\s*OVERRIDE",
+]
+
+
+class PromptInjectionDetector:
+    """Detect and block prompt injection attacks."""
+
+    def __init__(self, custom_patterns: List[str] = None, sensitivity: float = 0.6):
+        self.patterns = INJECTION_PATTERNS + (custom_patterns or [])
+        self.sensitivity = sensitivity
+        self._compiled = [re.compile(p, re.IGNORECASE) for p in self.patterns]
+
+    def detect(self, text: str) -> Dict[str, Any]:
+        """Check text for prompt injection attempts."""
+        matches = []
+        for i, pattern in enumerate(self._compiled):
+            found = pattern.findall(text)
+            if found:
+                matches.append({
+                    "pattern": self.patterns[i],
+                    "matches": found,
+                    "severity": "high",
+                })
+
+        # Heuristic checks
+        heuristic_flags = []
+        if len(text) > 5000:
+            heuristic_flags.append("unusually_long_input")
+        if text.count("\n") > 50:
+            heuristic_flags.append("excessive_newlines")
+        if any(c in text for c in ["```", "{{", "}}", "<script"]):
+            heuristic_flags.append("code_injection_markers")
+        if sum(1 for c in text if not c.isascii()) / max(len(text), 1) > 0.3:
+            heuristic_flags.append("high_non_ascii_ratio")
+
+        is_safe = len(matches) == 0 and len(heuristic_flags) < 2
+        risk_score = min(1.0, (len(matches) * 0.4 + len(heuristic_flags) * 0.15))
+
+        return {
+            "is_safe": is_safe,
+            "risk_score": round(risk_score, 3),
+            "pattern_matches": matches,
+            "heuristic_flags": heuristic_flags,
+        }
+
+    def sanitize(self, text: str) -> str:
+        """Attempt to sanitize a prompt by removing injection patterns."""
+        sanitized = text
+        for pattern in self._compiled:
+            sanitized = pattern.sub("[REDACTED]", sanitized)
+        return sanitized
+
+    def guard(self, user_input: str) -> Dict[str, Any]:
+        """Full guard pipeline: detect + sanitize if needed."""
+        result = self.detect(user_input)
+        if not result["is_safe"]:
+            return {
+                "action": "blocked",
+                "reason": "Potential prompt injection detected",
+                "details": result,
+                "sanitized": self.sanitize(user_input),
+            }
+        return {
+            "action": "pass",
+            "input": user_input,
+        }

@@ -1,0 +1,19 @@
+"""Health endpoint tests."""
+
+import pytest
+from httpx import AsyncClient
+
+
+@pytest.mark.anyio
+async def test_health(client: AsyncClient):
+    resp = await client.get("/api/v1/health")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "healthy"
+
+
+@pytest.mark.anyio
+async def test_health_has_version(client: AsyncClient):
+    resp = await client.get("/api/v1/health")
+    data = resp.json()
+    assert "version" in data

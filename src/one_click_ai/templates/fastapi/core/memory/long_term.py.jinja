@@ -1,0 +1,99 @@
+"""Long-term memory — persists facts and summaries across sessions."""
+
+from typing import Dict, List, Optional
+from app.config import get_settings
+{% if context.get("rag", False) %}
+from app.core.rag.pipeline import RAGPipeline
+{% endif %}
+import json
+import time
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class LongTermMemory:
+    """Stores facts, summaries, and user preferences for recall across sessions.
+
+    Uses the vector store (when RAG is enabled) for semantic retrieval,
+    or falls back to a simple JSON file store.
+    """
+
+    def __init__(self):
+        self.settings = get_settings()
+        {% if context.get("rag", False) %}
+        self.pipeline = RAGPipeline()
+        {% endif %}
+        self._file_store = "data/long_term_memory.json"
+
+    async def store(self, user_id: str, fact: str, metadata: Optional[Dict] = None) -> None:
+        """Store a fact in long-term memory."""
+        entry = {
+            "user_id": user_id,
+            "fact": fact,
+            "metadata": metadata or {},
+            "timestamp": time.time(),
+        }
+
+        {% if context.get("rag", False) %}
+        try:
+            import uuid
+
+            await self.pipeline.initialize()
+            await self.pipeline.ingest(
+                fact.encode("utf-8"),
+                f"memory_{uuid.uuid4().hex[:8]}.txt",
+                {"user_id": user_id, "type": "long_term_memory", **(metadata or {})},
+            )
+            return
+        except Exception as e:
+            logger.warning("Vector store memory failed, falling back to file: %s", e)
+        {% endif %}
+
+        # Fallback: file-based store
+        self._append_to_file(entry)
+
+    async def recall(self, user_id: str, query: str, top_k: int = 5) -> List[Dict]:
+        """Retrieve relevant facts from long-term memory."""
+        {% if context.get("rag", False) %}
+        try:
+            await self.pipeline.initialize()
+            results = await self.pipeline.query(query, top_k=top_k)
+            # Filter to user
+            sources = [
+                s for s in results.get("sources", [])
+                if s.get("metadata", {}).get("user_id") == user_id
+            ]
+            return sources
+        except Exception as e:
+            logger.warning("Vector recall failed: %s", e)
+        {% endif %}
+
+        return self._search_file(user_id, query)
+
+    def _append_to_file(self, entry: Dict) -> None:
+        import os
+
+        os.makedirs("data", exist_ok=True)
+        entries = []
+        if os.path.exists(self._file_store):
+            with open(self._file_store) as f:
+                entries = json.load(f)
+        entries.append(entry)
+        with open(self._file_store, "w") as f:
+            json.dump(entries, f, indent=2)
+
+    def _search_file(self, user_id: str, query: str) -> List[Dict]:
+        import os
+
+        if not os.path.exists(self._file_store):
+            return []
+        with open(self._file_store) as f:
+            entries = json.load(f)
+        # Simple keyword matching fallback
+        query_lower = query.lower()
+        return [
+            e
+            for e in entries
+            if e.get("user_id") == user_id and query_lower in e.get("fact", "").lower()
+        ][:5]

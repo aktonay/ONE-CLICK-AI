@@ -1,0 +1,116 @@
+{# Audit Logger #}
+"""
+AI interaction audit logging — every request/response tracked for compliance.
+"""
+
+import json
+import logging
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
+
+AUDIT_LOG_PATH = Path("logs/audit")
+
+
+class AuditLogger:
+    """Log all AI interactions for compliance and debugging."""
+
+    def __init__(self, log_dir: Path = AUDIT_LOG_PATH, enabled: bool = True):
+        self.log_dir = log_dir
+        self.enabled = enabled
+        if self.enabled:
+            self.log_dir.mkdir(parents=True, exist_ok=True)
+
+    def log(
+        self,
+        event_type: str,
+        user_id: Optional[str] = None,
+        request_data: Dict[str, Any] = None,
+        response_data: Dict[str, Any] = None,
+        metadata: Dict[str, Any] = None,
+        guardrail_results: Dict[str, Any] = None,
+    ) -> Dict[str, Any]:
+        """Log an AI interaction event."""
+        if not self.enabled:
+            return {}
+
+        entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "event_type": event_type,
+            "user_id": user_id,
+            "request": self._sanitize(request_data),
+            "response": self._sanitize(response_data),
+            "guardrails": guardrail_results,
+            "metadata": metadata or {},
+        }
+
+        # Write to file (one file per day)
+        date_str = datetime.utcnow().strftime("%Y-%m-%d")
+        log_file = self.log_dir / f"audit_{date_str}.jsonl"
+        with open(log_file, "a") as f:
+            f.write(json.dumps(entry, default=str) + "\n")
+
+        logger.debug(f"Audit: {event_type} [{user_id}]")
+        return entry
+
+    def _sanitize(self, data: Any) -> Any:
+        """Remove sensitive data before logging."""
+        if data is None:
+            return None
+        if isinstance(data, dict):
+            sanitized = {}
+            sensitive_keys = {"password", "token", "api_key", "secret", "credit_card", "ssn"}
+            for k, v in data.items():
+                if k.lower() in sensitive_keys:
+                    sanitized[k] = "[REDACTED]"
+                else:
+                    sanitized[k] = self._sanitize(v)
+            return sanitized
+        return data
+
+    def query_logs(
+        self,
+        date: str = None,
+        event_type: str = None,
+        user_id: str = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """Query audit logs with filters."""
+        results = []
+        log_files = sorted(self.log_dir.glob("audit_*.jsonl"), reverse=True)
+
+        if date:
+            log_files = [f for f in log_files if date in f.name]
+
+        for log_file in log_files:
+            with open(log_file) as f:
+                for line in f:
+                    entry = json.loads(line)
+                    if event_type and entry.get("event_type") != event_type:
+                        continue
+                    if user_id and entry.get("user_id") != user_id:
+                        continue
+                    results.append(entry)
+                    if len(results) >= limit:
+                        return results
+        return results
+
+    def get_stats(self, date: str = None) -> Dict[str, Any]:
+        """Get audit log statistics."""
+        logs = self.query_logs(date=date, limit=10000)
+        event_counts = {}
+        user_counts = {}
+        for entry in logs:
+            et = entry.get("event_type", "unknown")
+            event_counts[et] = event_counts.get(et, 0) + 1
+            uid = entry.get("user_id", "anonymous")
+            user_counts[uid] = user_counts.get(uid, 0) + 1
+
+        return {
+            "total_events": len(logs),
+            "event_types": event_counts,
+            "unique_users": len(user_counts),
+            "top_users": dict(sorted(user_counts.items(), key=lambda x: -x[1])[:10]),
+        }

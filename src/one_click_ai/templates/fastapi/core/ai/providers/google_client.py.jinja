@@ -1,0 +1,72 @@
+"""Google Gemini provider implementation."""
+
+from typing import AsyncIterator, Dict, List, Optional
+from app.core.ai.llm_client import BaseLLMClient
+from app.config import get_settings
+
+import google.generativeai as genai
+
+
+class GoogleClient(BaseLLMClient):
+    def __init__(self):
+        settings = get_settings()
+        genai.configure(api_key=settings.GOOGLE_API_KEY)
+        self.default_model = settings.GOOGLE_MODEL
+
+    async def chat(
+        self,
+        messages: List[Dict[str, str]],
+        model: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 2048,
+    ) -> Dict:
+        gemini = genai.GenerativeModel(model or self.default_model)
+
+        # Convert messages to Gemini format
+        history = []
+        latest_msg = ""
+        for m in messages:
+            if m["role"] == "user":
+                latest_msg = m["content"]
+            elif m["role"] == "assistant":
+                history.append({"role": "model", "parts": [m["content"]]})
+            elif m["role"] == "system":
+                history.insert(0, {"role": "user", "parts": [m["content"]]})
+                history.insert(1, {"role": "model", "parts": ["Understood."]})
+
+        chat = gemini.start_chat(history=history)
+        response = chat.send_message(
+            latest_msg,
+            generation_config=genai.GenerationConfig(
+                temperature=temperature,
+                max_output_tokens=max_tokens,
+            ),
+        )
+
+        return {
+            "content": response.text,
+            "model": model or self.default_model,
+            "usage": {},
+        }
+
+    async def chat_stream(
+        self,
+        messages: List[Dict[str, str]],
+        model: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 2048,
+    ) -> AsyncIterator[str]:
+        # Simplified — Gemini streaming
+        result = await self.chat(messages, model, temperature, max_tokens)
+        yield result["content"]
+
+    async def embed(self, texts: List[str]) -> List[List[float]]:
+        model = genai.GenerativeModel("models/text-embedding-004")
+        results = []
+        for text in texts:
+            response = genai.embed_content(
+                model="models/text-embedding-004",
+                content=text,
+            )
+            results.append(response["embedding"])
+        return results

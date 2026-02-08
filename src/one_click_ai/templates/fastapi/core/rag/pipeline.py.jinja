@@ -1,0 +1,91 @@
+"""
+Complete RAG pipeline: ingest → chunk → embed → index → retrieve → generate.
+"""
+
+from typing import Dict, List, Optional
+from app.core.rag.ingestion import load_document
+from app.core.rag.chunking import chunk_text, Chunk
+from app.core.rag.retriever import VectorRetriever
+from app.core.rag.reranker import Reranker
+from app.core.ai.embeddings import generate_embeddings
+from app.core.ai.factory import get_llm_client
+from app.core.ai.prompt_manager import PromptManager
+from app.vector_stores.factory import VectorStoreFactory
+from app.config import get_settings
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class RAGPipeline:
+    """End-to-end RAG pipeline."""
+
+    def __init__(self):
+        self.settings = get_settings()
+        self.retriever = VectorRetriever()
+        self.reranker = Reranker()
+        self.store = VectorStoreFactory.create(self.settings.VECTOR_STORE_TYPE)
+
+    async def ingest(
+        self, filename: str, content: bytes, content_type: str
+    ) -> Dict:
+        """Ingest a document: parse → chunk → embed → store."""
+        text = await load_document(content, filename, content_type)
+        chunks = chunk_text(
+            text,
+            chunk_size=self.settings.CHUNK_SIZE,
+            chunk_overlap=self.settings.CHUNK_OVERLAP,
+            metadata={"source": filename},
+        )
+        logger.info("Chunked %s into %d pieces", filename, len(chunks))
+
+        texts = [c.text for c in chunks]
+        embeddings = await generate_embeddings(texts)
+
+        await self.store.add(
+            vectors=embeddings,
+            texts=texts,
+            metadata=[c.metadata for c in chunks],
+        )
+
+        return {"chunks": len(chunks), "source": filename}
+
+    async def query(
+        self,
+        question: str,
+        top_k: int = 10,
+        filters: Optional[Dict] = None,
+        use_reranking: bool = True,
+    ) -> Dict:
+        """Query the knowledge base."""
+        chunks = await self.retriever.retrieve(
+            query=question, top_k=top_k, filters=filters
+        )
+
+        if use_reranking and chunks:
+            chunks = await self.reranker.rerank(
+                query=question, chunks=chunks, top_k=min(top_k, 5)
+            )
+
+        context = self._build_context(chunks)
+        messages = PromptManager.build_rag_prompt(question, context)
+
+        client = get_llm_client()
+        result = await client.chat(messages=messages, temperature=0.3)
+
+        return {
+            "answer": result["content"],
+            "sources": [
+                {"source": c.metadata.get("source", ""), "chunk_index": c.index, "score": 0.0}
+                for c in chunks
+            ],
+            "model": result.get("model", ""),
+        }
+
+    @staticmethod
+    def _build_context(chunks: List[Chunk]) -> str:
+        parts = []
+        for idx, chunk in enumerate(chunks, 1):
+            source = chunk.metadata.get("source", "Unknown")
+            parts.append(f"[{idx}] Source: {source}\n{chunk.text}")
+        return "\n\n".join(parts)

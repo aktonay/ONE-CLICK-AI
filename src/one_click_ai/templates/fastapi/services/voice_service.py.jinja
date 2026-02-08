@@ -1,0 +1,39 @@
+"""Voice service — handles STT, TTS, and voice-to-voice."""
+
+from typing import Dict, Optional
+from app.core.multimodal.stt import STTClient
+from app.core.multimodal.tts import TTSClient
+{% if context.get("voice_to_voice", False) %}
+from app.core.multimodal.voice_to_voice import VoiceToVoicePipeline
+{% endif %}
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class VoiceService:
+    def __init__(self):
+        self.stt = STTClient()
+        self.tts = TTSClient()
+        {% if context.get("voice_to_voice", False) %}
+        self.v2v = VoiceToVoicePipeline()
+        {% endif %}
+
+    async def transcribe(self, audio_bytes: bytes, filename: str = "audio.wav") -> Dict:
+        result = await self.stt.transcribe(audio_bytes, filename)
+        return result
+
+    async def synthesize(self, text: str, voice_id: Optional[str] = None) -> bytes:
+        audio = await self.tts.synthesize(text, voice_id)
+        return audio
+
+    {% if context.get("voice_to_voice", False) %}
+    async def voice_to_voice(
+        self,
+        audio_bytes: bytes,
+        system_prompt: str = "You are a helpful voice assistant.",
+        session_history: list | None = None,
+    ) -> Dict:
+        result = await self.v2v.process(audio_bytes, system_prompt, session_history)
+        return result
+    {% endif %}

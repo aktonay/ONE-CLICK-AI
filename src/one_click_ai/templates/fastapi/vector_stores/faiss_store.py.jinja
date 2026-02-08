@@ -1,0 +1,128 @@
+"""FAISS vector store — fast local similarity search."""
+
+from typing import Dict, List, Optional
+from app.vector_stores.base import BaseVectorStore, VectorRecord
+import numpy as np
+import logging
+import json
+import os
+
+logger = logging.getLogger(__name__)
+
+
+class FAISSVectorStore(BaseVectorStore):
+    """FAISS-backed vector store with metadata sidecar."""
+
+    def __init__(self, index_dir: str = "data/vector_indexes", dimension: int = 1536):
+        self.index_dir = index_dir
+        self.dimension = dimension
+        self._index = None
+        self._metadata: Dict[int, Dict] = {}
+        self._texts: Dict[int, str] = {}
+        self._ids: Dict[int, str] = {}
+        self._counter = 0
+
+    async def initialize(self) -> None:
+        import faiss
+
+        os.makedirs(self.index_dir, exist_ok=True)
+        idx_path = os.path.join(self.index_dir, "index.faiss")
+        meta_path = os.path.join(self.index_dir, "meta.json")
+
+        if os.path.exists(idx_path):
+            self._index = faiss.read_index(idx_path)
+            with open(meta_path) as f:
+                data = json.load(f)
+                self._metadata = {int(k): v for k, v in data.get("metadata", {}).items()}
+                self._texts = {int(k): v for k, v in data.get("texts", {}).items()}
+                self._ids = {int(k): v for k, v in data.get("ids", {}).items()}
+                self._counter = data.get("counter", 0)
+        else:
+            self._index = faiss.IndexFlatL2(self.dimension)
+
+        logger.info("FAISS initialised — %d vectors", self._index.ntotal)
+
+    async def add(self, records: List[VectorRecord]) -> int:
+        vectors = np.array([r.embedding for r in records], dtype="float32")
+        start = self._counter
+        self._index.add(vectors)
+        for i, rec in enumerate(records):
+            idx = start + i
+            self._metadata[idx] = rec.metadata or {}
+            self._texts[idx] = rec.text
+            self._ids[idx] = rec.id
+        self._counter += len(records)
+        self._save()
+        return len(records)
+
+    async def search(
+        self, query_embedding: List[float], top_k: int = 5, filters: Optional[Dict] = None
+    ) -> List[VectorRecord]:
+        query = np.array([query_embedding], dtype="float32")
+        distances, indices = self._index.search(query, min(top_k, self._index.ntotal))
+
+        results: List[VectorRecord] = []
+        for dist, idx in zip(distances[0], indices[0]):
+            if idx == -1:
+                continue
+            idx = int(idx)
+            record = VectorRecord(
+                id=self._ids.get(idx, str(idx)),
+                text=self._texts.get(idx, ""),
+                embedding=[],
+                metadata=self._metadata.get(idx),
+                score=float(1 / (1 + dist)),
+            )
+            if filters:
+                meta = record.metadata or {}
+                if not all(meta.get(k) == v for k, v in filters.items()):
+                    continue
+            results.append(record)
+        return results
+
+    async def delete(self, ids: List[str]) -> int:
+        import faiss
+
+        keep_ids = {idx for idx, ext_id in self._ids.items() if ext_id not in ids}
+        if len(keep_ids) == len(self._ids):
+            return 0
+        deleted = len(self._ids) - len(keep_ids)
+
+        new_index = faiss.IndexFlatL2(self.dimension)
+        new_meta, new_texts, new_ids = {}, {}, {}
+        counter = 0
+        for old_idx in sorted(keep_ids):
+            vec = np.zeros((1, self.dimension), dtype="float32")
+            self._index.reconstruct(old_idx, vec[0])
+            new_index.add(vec)
+            new_meta[counter] = self._metadata[old_idx]
+            new_texts[counter] = self._texts[old_idx]
+            new_ids[counter] = self._ids[old_idx]
+            counter += 1
+
+        self._index = new_index
+        self._metadata = new_meta
+        self._texts = new_texts
+        self._ids = new_ids
+        self._counter = counter
+        self._save()
+        return deleted
+
+    async def count(self) -> int:
+        return self._index.ntotal if self._index else 0
+
+    def _save(self):
+        import faiss
+
+        os.makedirs(self.index_dir, exist_ok=True)
+        faiss.write_index(self._index, os.path.join(self.index_dir, "index.faiss"))
+        with open(os.path.join(self.index_dir, "meta.json"), "w") as f:
+            json.dump(
+                {
+                    "metadata": {str(k): v for k, v in self._metadata.items()},
+                    "texts": {str(k): v for k, v in self._texts.items()},
+                    "ids": {str(k): v for k, v in self._ids.items()},
+                    "counter": self._counter,
+                },
+                f,
+            )

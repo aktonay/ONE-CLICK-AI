@@ -1,0 +1,70 @@
+{# Edge AI API Routes #}
+"""
+Edge AI API endpoints — convert, optimize, benchmark.
+"""
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Optional
+import numpy as np
+
+router = APIRouter(prefix="/edge", tags=["Edge AI"])
+
+
+class ConvertRequest(BaseModel):
+    model_path: str
+    output_format: str = "onnx"
+    fp16: bool = True
+
+
+class BenchmarkRequest(BaseModel):
+    model_path: str
+    runtime: str = "onnx"
+    input_shape: List[int] = [1, 3, 640, 640]
+    iterations: int = 100
+
+
+class BenchmarkResponse(BaseModel):
+    mean_ms: float
+    p50_ms: float
+    p95_ms: float
+    p99_ms: float
+    throughput_fps: float
+    iterations: int
+
+
+{% if onnx %}
+@router.post("/convert/onnx")
+async def convert_to_onnx(request: ConvertRequest):
+    """Convert model to ONNX format."""
+    from app.edge.converter import ModelConverter
+    result = ModelConverter.validate_onnx(request.model_path)
+    return result
+
+
+@router.post("/benchmark", response_model=BenchmarkResponse)
+async def benchmark_model(request: BenchmarkRequest):
+    """Benchmark model inference speed."""
+    from app.edge.runtime import EdgeRuntime
+    runtime = EdgeRuntime(request.model_path, runtime=request.runtime)
+    dummy_input = np.random.randn(*request.input_shape).astype(np.float32)
+    result = runtime.benchmark(dummy_input, iterations=request.iterations)
+    return BenchmarkResponse(**result)
+
+
+@router.get("/model-info")
+async def get_model_info(model_path: str, runtime: str = "onnx"):
+    """Get model metadata."""
+    from app.edge.runtime import EdgeRuntime
+    rt = EdgeRuntime(model_path, runtime=runtime)
+    return rt.get_model_info()
+{% endif %}
+
+{% if quantization %}
+@router.post("/quantize")
+async def quantize_model(model_path: str, output_path: str = "models/edge/quantized.onnx"):
+    """Quantize ONNX model to INT8."""
+    from app.edge.optimizer import ModelOptimizer
+    result = ModelOptimizer.quantize_onnx(model_path, output_path)
+    return result
+{% endif %}

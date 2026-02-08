@@ -1,0 +1,65 @@
+"""OpenAI provider implementation."""
+
+from typing import AsyncIterator, Dict, List, Optional
+from app.core.ai.llm_client import BaseLLMClient
+from app.config import get_settings
+
+import openai
+
+
+class OpenAIClient(BaseLLMClient):
+    def __init__(self):
+        settings = get_settings()
+        self.client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        self.default_model = settings.OPENAI_MODEL
+        self.embedding_model = settings.OPENAI_EMBEDDING_MODEL
+
+    async def chat(
+        self,
+        messages: List[Dict[str, str]],
+        model: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 2048,
+    ) -> Dict:
+        response = await self.client.chat.completions.create(
+            model=model or self.default_model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        choice = response.choices[0]
+        return {
+            "content": choice.message.content or "",
+            "model": response.model,
+            "usage": {
+                "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
+                "completion_tokens": response.usage.completion_tokens if response.usage else 0,
+                "total_tokens": response.usage.total_tokens if response.usage else 0,
+            },
+        }
+
+    async def chat_stream(
+        self,
+        messages: List[Dict[str, str]],
+        model: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 2048,
+    ) -> AsyncIterator[str]:
+        stream = await self.client.chat.completions.create(
+            model=model or self.default_model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=True,
+        )
+        async for chunk in stream:
+            delta = chunk.choices[0].delta
+            if delta.content:
+                yield delta.content
+
+    async def embed(self, texts: List[str]) -> List[List[float]]:
+        response = await self.client.embeddings.create(
+            model=self.embedding_model,
+            input=texts,
+        )
+        return [item.embedding for item in response.data]

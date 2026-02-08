@@ -1,0 +1,82 @@
+{# Analytics API Routes #}
+"""
+Analytics API — Text-to-SQL, charts, reports.
+"""
+
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import HTMLResponse
+from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Optional
+
+router = APIRouter(prefix="/analytics", tags=["Analytics"])
+
+
+class AskRequest(BaseModel):
+    question: str
+    db_url: str = "sqlite:///data.db"
+
+
+class SQLResponse(BaseModel):
+    question: str
+    sql: str
+    is_valid: bool
+    columns: Optional[List[str]] = None
+    rows: Optional[List[Dict[str, Any]]] = None
+    row_count: Optional[int] = None
+    error: Optional[str] = None
+
+
+class ChartRequest(BaseModel):
+    data: Dict[str, List]
+    chart_type: str = "auto"
+    x: Optional[str] = None
+    y: Optional[str] = None
+    title: str = "Chart"
+
+
+class ReportRequest(BaseModel):
+    questions: List[str]
+    title: str = "Analytics Report"
+    db_url: str = "sqlite:///data.db"
+
+
+@router.post("/ask", response_model=SQLResponse)
+async def ask_question(request: AskRequest):
+    """Ask a natural language question about your data."""
+    from app.analytics.text_to_sql import TextToSQLEngine
+    engine = TextToSQLEngine(db_url=request.db_url)
+    result = engine.ask(request.question)
+    return SQLResponse(**result)
+
+
+@router.post("/chart", response_class=HTMLResponse)
+async def generate_chart(request: ChartRequest):
+    """Generate an interactive chart."""
+    from app.analytics.chart_gen import ChartGenerator
+    gen = ChartGenerator()
+
+    if request.chart_type == "bar":
+        return gen.bar_chart(request.data, x=request.x, y=request.y, title=request.title)
+    elif request.chart_type == "line":
+        return gen.line_chart(request.data, x=request.x, y=request.y, title=request.title)
+    elif request.chart_type == "pie":
+        return gen.pie_chart(request.data, names=request.x, values=request.y, title=request.title)
+    elif request.chart_type == "scatter":
+        return gen.scatter_plot(request.data, x=request.x, y=request.y, title=request.title)
+    else:
+        return gen.auto_chart(request.data, question=request.title)
+
+
+@router.post("/report", response_class=HTMLResponse)
+async def generate_report(request: ReportRequest):
+    """Generate a full analytics report from questions."""
+    from app.analytics.text_to_sql import TextToSQLEngine
+    from app.analytics.chart_gen import ChartGenerator
+    from app.analytics.report import ReportGenerator
+
+    sql_engine = TextToSQLEngine(db_url=request.db_url)
+    chart_gen = ChartGenerator()
+    report_gen = ReportGenerator()
+
+    html = report_gen.generate_from_questions(request.questions, sql_engine, chart_gen)
+    return HTMLResponse(content=html)

@@ -1,0 +1,54 @@
+{# TensorFlow Models #}
+"""
+Pre-built TensorFlow/Keras model architectures.
+"""
+
+import tensorflow as tf
+from tensorflow import keras
+from typing import List, Tuple
+
+
+def create_mlp(input_shape: Tuple[int], num_classes: int, hidden_dims: List[int] = None):
+    """MLP for tabular classification."""
+    hidden_dims = hidden_dims or [256, 128, 64]
+    model = keras.Sequential()
+    model.add(keras.layers.Input(shape=input_shape))
+    for dim in hidden_dims:
+        model.add(keras.layers.Dense(dim, activation="relu"))
+        model.add(keras.layers.BatchNormalization())
+        model.add(keras.layers.Dropout(0.3))
+    model.add(keras.layers.Dense(num_classes, activation="softmax"))
+    model.compile(optimizer="adam", loss="sparse_categorical_crossentropy", metrics=["accuracy"])
+    return model
+
+
+def create_cnn(input_shape: Tuple[int, int, int], num_classes: int):
+    """CNN for image classification."""
+    model = keras.Sequential([
+        keras.layers.Input(shape=input_shape),
+        keras.layers.Conv2D(32, 3, activation="relu", padding="same"),
+        keras.layers.MaxPooling2D(),
+        keras.layers.Conv2D(64, 3, activation="relu", padding="same"),
+        keras.layers.MaxPooling2D(),
+        keras.layers.Conv2D(128, 3, activation="relu", padding="same"),
+        keras.layers.GlobalAveragePooling2D(),
+        keras.layers.Dense(256, activation="relu"),
+        keras.layers.Dropout(0.5),
+        keras.layers.Dense(num_classes, activation="softmax"),
+    ])
+    model.compile(optimizer="adam", loss="sparse_categorical_crossentropy", metrics=["accuracy"])
+    return model
+
+
+def create_lstm(input_shape: Tuple[int, int], num_classes: int):
+    """LSTM for sequence classification."""
+    model = keras.Sequential([
+        keras.layers.Input(shape=input_shape),
+        keras.layers.Bidirectional(keras.layers.LSTM(128, return_sequences=True)),
+        keras.layers.Bidirectional(keras.layers.LSTM(64)),
+        keras.layers.Dense(64, activation="relu"),
+        keras.layers.Dropout(0.3),
+        keras.layers.Dense(num_classes, activation="softmax"),
+    ])
+    model.compile(optimizer="adam", loss="sparse_categorical_crossentropy", metrics=["accuracy"])
+    return model

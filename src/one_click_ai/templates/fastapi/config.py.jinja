@@ -1,0 +1,189 @@
+"""
+Centralised configuration — loaded from environment / .env file.
+"""
+
+from pydantic_settings import BaseSettings
+from pydantic import Field
+from typing import List, Optional
+from functools import lru_cache
+
+
+class Settings(BaseSettings):
+    # ── Application ──
+    APP_NAME: str = "{{ project_name }}"
+    APP_ENV: str = Field(default="development", alias="APP_ENV")
+    DEBUG: bool = Field(default=True)
+    LOG_LEVEL: str = Field(default="INFO")
+
+    # ── Server ──
+    HOST: str = Field(default="0.0.0.0")
+    PORT: int = Field(default=8000)
+    WORKERS: int = Field(default=4)
+
+    # ── Security ──
+    SECRET_KEY: str = Field(default="{{ secret_key }}")
+    ALLOWED_HOSTS: List[str] = Field(default=["*"])
+    ALLOWED_ORIGINS: List[str] = Field(default=["*"])
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRATION_HOURS: int = 24
+
+{% if postgres %}
+    # ── PostgreSQL ──
+    POSTGRES_HOST: str = Field(default="localhost")
+    POSTGRES_PORT: int = Field(default=5432)
+    POSTGRES_DB: str = Field(default="{{ project_name }}_db")
+    POSTGRES_USER: str = Field(default="postgres")
+    POSTGRES_PASSWORD: str = Field(default="postgres")
+
+    @property
+    def POSTGRES_URL(self) -> str:
+        return (
+            f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+            f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        )
+{% endif %}
+
+{% if mongodb %}
+    # ── MongoDB ──
+    MONGODB_URI: str = Field(default="mongodb://localhost:27017")
+    MONGODB_DATABASE: str = Field(default="{{ project_name }}_db")
+{% endif %}
+
+{% if redis or session %}
+    # ── Redis ──
+    REDIS_HOST: str = Field(default="localhost")
+    REDIS_PORT: int = Field(default=6379)
+    REDIS_PASSWORD: Optional[str] = Field(default=None)
+    REDIS_DB: int = Field(default=0)
+
+    @property
+    def REDIS_URL(self) -> str:
+        if self.REDIS_PASSWORD:
+            return f"redis://:{self.REDIS_PASSWORD}@{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+{% endif %}
+
+    # ── LLM Providers ──
+    DEFAULT_LLM_PROVIDER: str = Field(default="{{ llm_provider }}")
+{% if openai %}
+    OPENAI_API_KEY: str = Field(default="sk-...")
+    OPENAI_MODEL: str = Field(default="gpt-4o")
+    OPENAI_EMBEDDING_MODEL: str = Field(default="text-embedding-3-small")
+{% endif %}
+{% if anthropic %}
+    ANTHROPIC_API_KEY: str = Field(default="sk-ant-...")
+    ANTHROPIC_MODEL: str = Field(default="claude-sonnet-4-20250514")
+{% endif %}
+{% if google %}
+    GOOGLE_API_KEY: str = Field(default="...")
+    GOOGLE_MODEL: str = Field(default="gemini-2.5-flash-preview-05-20")
+{% endif %}
+{% if groq %}
+    GROQ_API_KEY: str = Field(default="gsk_...")
+    GROQ_MODEL: str = Field(default="llama-3.3-70b-versatile")
+{% endif %}
+{% if grok %}
+    GROK_API_KEY: str = Field(default="...")
+    GROK_MODEL: str = Field(default="grok-3")
+{% endif %}
+{% if cohere %}
+    COHERE_API_KEY: str = Field(default="...")
+    COHERE_MODEL: str = Field(default="command-r-plus")
+{% endif %}
+{% if mistral %}
+    MISTRAL_API_KEY: str = Field(default="...")
+    MISTRAL_MODEL: str = Field(default="mistral-large-latest")
+{% endif %}
+{% if ollama %}
+    OLLAMA_BASE_URL: str = Field(default="http://localhost:11434")
+    OLLAMA_MODEL: str = Field(default="llama3.2")
+{% endif %}
+
+{% if rag %}
+    # ── RAG ──
+    VECTOR_STORE_TYPE: str = Field(default="{{ vector_store }}")
+    EMBEDDING_MODEL: str = Field(default="text-embedding-3-small")
+    EMBEDDING_DIMENSION: int = Field(default=1536)
+    CHUNK_SIZE: int = Field(default=512)
+    CHUNK_OVERLAP: int = Field(default=128)
+    TOP_K_RETRIEVAL: int = Field(default=10)
+    SIMILARITY_THRESHOLD: float = Field(default=0.7)
+    USE_RERANKING: bool = Field(default=True)
+{% if faiss %}
+    FAISS_INDEX_PATH: str = Field(default="./vector_indexes/faiss")
+{% endif %}
+{% if pinecone %}
+    PINECONE_API_KEY: str = Field(default="...")
+    PINECONE_INDEX_NAME: str = Field(default="{{ project_name }}-index")
+{% endif %}
+{% if qdrant %}
+    QDRANT_URL: str = Field(default="http://localhost:6333")
+    QDRANT_API_KEY: Optional[str] = Field(default=None)
+    QDRANT_COLLECTION: str = Field(default="{{ project_name }}")
+{% endif %}
+{% if weaviate %}
+    WEAVIATE_URL: str = Field(default="http://localhost:8080")
+    WEAVIATE_API_KEY: Optional[str] = Field(default=None)
+{% endif %}
+{% if chroma %}
+    CHROMA_HOST: str = Field(default="localhost")
+    CHROMA_PORT: int = Field(default=8000)
+{% endif %}
+{% endif %}
+
+{% if voice %}
+    # ── Voice ──
+    STT_PROVIDER: str = Field(default="{{ stt_provider }}")
+    TTS_PROVIDER: str = Field(default="{{ tts_provider }}")
+{% if tts_provider == 'elevenlabs' %}
+    ELEVENLABS_API_KEY: str = Field(default="...")
+    ELEVENLABS_VOICE_ID: str = Field(default="21m00Tcm4TlvDq8ikWAM")
+{% endif %}
+{% endif %}
+
+{% if emotion %}
+    # ── Emotion Detection ──
+    EMOTION_PROVIDER: str = Field(default="{{ emotion_provider }}")
+    HUME_API_KEY: str = Field(default="...")
+    HUME_SECRET_KEY: Optional[str] = Field(default=None)
+{% endif %}
+
+{% if vision %}
+    # ── Vision ──
+    VISION_PROVIDER: str = Field(default="{{ vision_provider }}")
+    VISION_MODEL: str = Field(default="gpt-4o")
+{% endif %}
+
+{% if search %}
+    # ── Web Search ──
+    SEARCH_PROVIDER: str = Field(default="{{ search_provider }}")
+    TAVILY_API_KEY: Optional[str] = Field(default=None)
+{% endif %}
+
+{% if session %}
+    # ── Session ──
+    SESSION_STORE: str = Field(default="redis")
+    SESSION_TIMEOUT_SECONDS: int = Field(default=3600)
+    MAX_SESSION_HISTORY: int = Field(default=50)
+{% endif %}
+
+{% if monitoring %}
+    # ── Monitoring ──
+    SENTRY_DSN: Optional[str] = Field(default=None)
+{% endif %}
+
+    # ── Files ──
+    UPLOAD_DIR: str = Field(default="./storage/uploads")
+    MAX_UPLOAD_SIZE_MB: int = Field(default=50)
+
+    # ── Properties ──
+    @property
+    def is_production(self) -> bool:
+        return self.APP_ENV == "production"
+
+    model_config = {"env_file": ".env", "case_sensitive": True, "extra": "ignore"}
+
+
+@lru_cache()
+def get_settings() -> Settings:
+    return Settings()

@@ -1,0 +1,112 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: {{ project_name }}-dev
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - /app/.venv
+    env_file:
+      - .env
+    environment:
+      - DEBUG=true
+    {% if context.get("postgres", False) or context.get("redis", False) or context.get("mongodb", False) %}
+    depends_on:
+    {% endif %}
+      {% if context.get("postgres", False) %}
+      postgres:
+        condition: service_healthy
+      {% endif %}
+      {% if context.get("redis", False) %}
+      redis:
+        condition: service_healthy
+      {% endif %}
+      {% if context.get("mongodb", False) %}
+      mongodb:
+        condition: service_started
+      {% endif %}
+    restart: unless-stopped
+
+  {% if context.get("postgres", False) %}
+  postgres:
+    image: postgres:16-alpine
+    container_name: {{ project_name }}-postgres
+    environment:
+      POSTGRES_DB: {{ project_name }}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+  {% endif %}
+
+  {% if context.get("redis", False) %}
+  redis:
+    image: redis:7-alpine
+    container_name: {{ project_name }}-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+  {% endif %}
+
+  {% if context.get("mongodb", False) %}
+  mongodb:
+    image: mongo:7
+    container_name: {{ project_name }}-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+  {% endif %}
+
+  {% if context.get("qdrant", False) %}
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: {{ project_name }}-qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+  {% endif %}
+
+  {% if context.get("chroma", False) %}
+  chroma:
+    image: chromadb/chroma:latest
+    container_name: {{ project_name }}-chroma
+    ports:
+      - "8100:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+  {% endif %}
+
+volumes:
+  {% if context.get("postgres", False) %}
+  postgres_data:
+  {% endif %}
+  {% if context.get("redis", False) %}
+  redis_data:
+  {% endif %}
+  {% if context.get("mongodb", False) %}
+  mongo_data:
+  {% endif %}
+  {% if context.get("qdrant", False) %}
+  qdrant_data:
+  {% endif %}
+  {% if context.get("chroma", False) %}
+  chroma_data:
+  {% endif %}

@@ -1,0 +1,65 @@
+{# ML Service #}
+"""
+ML service layer — orchestrates training, prediction, evaluation.
+"""
+
+import logging
+from typing import Any, Dict, Optional
+from app.ml.config import TrainingConfig, PredictionConfig
+
+logger = logging.getLogger(__name__)
+
+
+class MLService:
+    """High-level ML service for the API layer."""
+
+    def __init__(self):
+        self._models: Dict[str, Any] = {}
+
+    async def train(self, config: TrainingConfig) -> Dict[str, Any]:
+        """Run a full training pipeline."""
+        from app.ml.trainer import create_trainer
+        from app.ml.experiment import ExperimentTracker
+        from app.ml.model_registry import ModelRegistry
+
+        tracker = ExperimentTracker(project_name=config.experiment_name)
+        tracker.start_run(run_name=config.model_name, config=config.model_dump())
+
+        trainer = create_trainer(config)
+        result = trainer.train(None, None)  # replace with actual data
+
+        tracker.log_metrics(result.get("metrics", {}))
+        tracker.end_run()
+
+        registry = ModelRegistry()
+        registry.register(
+            name=config.model_name,
+            version="1.0",
+            model_path=f"{config.output_path}/best_model",
+            framework=config.framework.value,
+            metrics=result.get("metrics", {}),
+        )
+
+        return result
+
+    async def predict(self, model_name: str, data: Any, framework: str = "pytorch") -> Dict[str, Any]:
+        """Run inference on a trained model."""
+        from app.ml.predictor import ModelPredictor
+
+        if model_name not in self._models:
+            self._models[model_name] = ModelPredictor(
+                model_path=f"models/exported/{model_name}",
+                framework=framework,
+            )
+        return self._models[model_name].predict(data)
+
+    async def evaluate(self, model_name: str, data: Any, labels: Any, task: str = "classification"):
+        """Evaluate a model on test data."""
+        from app.ml.evaluation import evaluate_classification, evaluate_regression
+        predictor = self._models.get(model_name)
+        if not predictor:
+            raise ValueError(f"Model {model_name} not loaded")
+        predictions = predictor.predict(data)["predictions"]
+        if task == "classification":
+            return evaluate_classification(labels, predictions)
+        return evaluate_regression(labels, predictions)

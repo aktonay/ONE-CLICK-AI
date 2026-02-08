@@ -1,0 +1,72 @@
+{# Report Generator #}
+"""
+Automated report generation — combine SQL results, charts, and narrative.
+"""
+
+import logging
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
+
+
+class ReportGenerator:
+    """Generate data analysis reports."""
+
+    def __init__(self):
+        self.sections: List[Dict[str, Any]] = []
+
+    def add_section(self, title: str, content: str, chart_html: str = None):
+        """Add a section to the report."""
+        self.sections.append({
+            "title": title,
+            "content": content,
+            "chart_html": chart_html,
+            "timestamp": datetime.utcnow().isoformat(),
+        })
+
+    def generate_html(self, title: str = "Analytics Report") -> str:
+        """Generate full HTML report."""
+        sections_html = ""
+        for i, section in enumerate(self.sections, 1):
+            sections_html += f"""
+            <div class="section">
+                <h2>{i}. {section['title']}</h2>
+                <p>{section['content']}</p>
+                {section.get('chart_html', '') or ''}
+            </div>
+            """
+
+        return f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>{title}</title>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; }}
+        h1 {{ color: #1a1a2e; border-bottom: 2px solid #e94560; padding-bottom: 10px; }}
+        .section {{ margin: 30px 0; padding: 20px; background: #f8f9fa; border-radius: 8px; }}
+        h2 {{ color: #16213e; }}
+        .meta {{ color: #666; font-size: 0.9em; }}
+    </style>
+</head>
+<body>
+    <h1>{title}</h1>
+    <p class="meta">Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}</p>
+    {sections_html}
+</body>
+</html>"""
+
+    def generate_from_questions(self, questions: List[str], sql_engine, chart_gen) -> str:
+        """Generate report from a list of questions."""
+        for q in questions:
+            result = sql_engine.ask(q)
+            chart_html = None
+            if "rows" in result and result["rows"]:
+                data = {col: [r[col] for r in result["rows"]] for col in result["columns"]}
+                chart_html = chart_gen.auto_chart(data, question=q)
+            self.add_section(
+                title=q,
+                content=f"SQL: `{result.get('sql', 'N/A')}` — {result.get('row_count', 0)} rows returned",
+                chart_html=chart_html,
+            )
+        return self.generate_html()

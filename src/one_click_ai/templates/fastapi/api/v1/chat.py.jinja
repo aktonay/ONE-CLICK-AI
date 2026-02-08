@@ -1,0 +1,91 @@
+"""Chat & completion endpoints."""
+
+from fastapi import APIRouter, Depends
+from typing import Optional
+from pydantic import BaseModel, Field
+
+from app.config import get_settings
+from app.core.ai.factory import get_llm_client
+
+router = APIRouter()
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=32_000)
+    model: Optional[str] = None
+    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    max_tokens: int = Field(default=2048, ge=1, le=128_000)
+    system_prompt: Optional[str] = None
+{% if session %}
+    session_id: Optional[str] = None
+{% endif %}
+{% if streaming %}
+    stream: bool = False
+{% endif %}
+
+
+class ChatResponse(BaseModel):
+    response: str
+    model: str
+    usage: dict = {}
+{% if session %}
+    session_id: Optional[str] = None
+{% endif %}
+
+
+@router.post("/", response_model=ChatResponse)
+async def chat_completion(request: ChatRequest):
+    """
+    Send a message and receive an AI-generated response.
+    """
+    settings = get_settings()
+    client = get_llm_client(settings.DEFAULT_LLM_PROVIDER)
+
+    messages = []
+    if request.system_prompt:
+        messages.append({"role": "system", "content": request.system_prompt})
+    messages.append({"role": "user", "content": request.message})
+
+    result = await client.chat(
+        messages=messages,
+        model=request.model,
+        temperature=request.temperature,
+        max_tokens=request.max_tokens,
+    )
+
+    return ChatResponse(
+        response=result["content"],
+        model=result.get("model", settings.DEFAULT_LLM_PROVIDER),
+        usage=result.get("usage", {}),
+    )
+
+
+{% if streaming %}
+from fastapi.responses import StreamingResponse
+
+
+@router.post("/stream")
+async def chat_stream(request: ChatRequest):
+    """
+    Stream an AI-generated response token-by-token.
+    """
+    settings = get_settings()
+    client = get_llm_client(settings.DEFAULT_LLM_PROVIDER)
+
+    messages = []
+    if request.system_prompt:
+        messages.append({"role": "system", "content": request.system_prompt})
+    messages.append({"role": "user", "content": request.message})
+
+    async def generate():
+        async for chunk in client.chat_stream(
+            messages=messages,
+            model=request.model,
+            temperature=request.temperature,
+            max_tokens=request.max_tokens,
+        ):
+            yield f"data: {chunk}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+{% endif %}

@@ -1,0 +1,64 @@
+{# Chart Generator #}
+"""
+Chart & visualization generation using Plotly.
+"""
+
+import logging
+from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
+
+
+class ChartGenerator:
+    """Generate interactive charts from data."""
+
+    @staticmethod
+    def bar_chart(data: Dict[str, List], x: str, y: str, title: str = "Bar Chart") -> str:
+        """Generate Plotly bar chart and return as HTML."""
+        import plotly.express as px
+        import pandas as pd
+        df = pd.DataFrame(data)
+        fig = px.bar(df, x=x, y=y, title=title)
+        return fig.to_html(include_plotlyjs="cdn")
+
+    @staticmethod
+    def line_chart(data: Dict[str, List], x: str, y: str, title: str = "Line Chart") -> str:
+        import plotly.express as px
+        import pandas as pd
+        df = pd.DataFrame(data)
+        fig = px.line(df, x=x, y=y, title=title)
+        return fig.to_html(include_plotlyjs="cdn")
+
+    @staticmethod
+    def pie_chart(data: Dict[str, List], names: str, values: str, title: str = "Pie Chart") -> str:
+        import plotly.express as px
+        import pandas as pd
+        df = pd.DataFrame(data)
+        fig = px.pie(df, names=names, values=values, title=title)
+        return fig.to_html(include_plotlyjs="cdn")
+
+    @staticmethod
+    def scatter_plot(data: Dict[str, List], x: str, y: str, color: str = None, title: str = "Scatter") -> str:
+        import plotly.express as px
+        import pandas as pd
+        df = pd.DataFrame(data)
+        fig = px.scatter(df, x=x, y=y, color=color, title=title)
+        return fig.to_html(include_plotlyjs="cdn")
+
+    @staticmethod
+    def auto_chart(data: Dict[str, List], question: str = "") -> str:
+        """Automatically select best chart type based on data."""
+        import pandas as pd
+        df = pd.DataFrame(data)
+
+        numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+        categorical_cols = df.select_dtypes(include=["object", "category"]).columns.tolist()
+
+        if len(numeric_cols) >= 2:
+            return ChartGenerator.scatter_plot(data, x=numeric_cols[0], y=numeric_cols[1], title=question)
+        elif len(categorical_cols) >= 1 and len(numeric_cols) >= 1:
+            return ChartGenerator.bar_chart(data, x=categorical_cols[0], y=numeric_cols[0], title=question)
+        elif len(numeric_cols) == 1:
+            return ChartGenerator.line_chart(data, x=df.columns[0], y=numeric_cols[0], title=question)
+        else:
+            return "<p>Cannot determine appropriate chart type for this data.</p>"

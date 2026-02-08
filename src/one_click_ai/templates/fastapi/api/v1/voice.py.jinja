@@ -1,0 +1,55 @@
+"""Voice (STT / TTS) endpoints."""
+
+from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi.responses import StreamingResponse
+from typing import Optional
+from pydantic import BaseModel, Field
+import io
+
+router = APIRouter()
+
+
+class TTSRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=5000)
+    voice_id: Optional[str] = None
+    model: Optional[str] = None
+
+
+@router.post("/transcribe")
+async def speech_to_text(audio: UploadFile = File(...)):
+    """
+    Transcribe audio to text (Speech-to-Text).
+    Accepts: wav, mp3, m4a, webm, ogg.
+    """
+    from app.services.voice_service import VoiceService
+
+    try:
+        service = VoiceService()
+        content = await audio.read()
+        result = await service.transcribe(content, filename=audio.filename or "audio.wav")
+        return {"text": result["text"], "language": result.get("language")}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/synthesize")
+async def text_to_speech(request: TTSRequest):
+    """
+    Convert text to speech audio (Text-to-Speech).
+    Returns audio/mpeg stream.
+    """
+    from app.services.voice_service import VoiceService
+
+    try:
+        service = VoiceService()
+        audio_bytes = await service.synthesize(
+            text=request.text,
+            voice_id=request.voice_id,
+        )
+        return StreamingResponse(
+            io.BytesIO(audio_bytes),
+            media_type="audio/mpeg",
+            headers={"Content-Disposition": "attachment; filename=speech.mp3"},
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -1,0 +1,79 @@
+"""Anthropic Claude provider implementation."""
+
+from typing import AsyncIterator, Dict, List, Optional
+from app.core.ai.llm_client import BaseLLMClient
+from app.config import get_settings
+
+import anthropic
+
+
+class AnthropicClient(BaseLLMClient):
+    def __init__(self):
+        settings = get_settings()
+        self.client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+        self.default_model = settings.ANTHROPIC_MODEL
+
+    async def chat(
+        self,
+        messages: List[Dict[str, str]],
+        model: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 2048,
+    ) -> Dict:
+        # Separate system prompt
+        system_msg = ""
+        chat_messages = []
+        for m in messages:
+            if m["role"] == "system":
+                system_msg = m["content"]
+            else:
+                chat_messages.append(m)
+
+        response = await self.client.messages.create(
+            model=model or self.default_model,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            system=system_msg,
+            messages=chat_messages,
+        )
+        return {
+            "content": response.content[0].text if response.content else "",
+            "model": response.model,
+            "usage": {
+                "prompt_tokens": response.usage.input_tokens,
+                "completion_tokens": response.usage.output_tokens,
+                "total_tokens": response.usage.input_tokens + response.usage.output_tokens,
+            },
+        }
+
+    async def chat_stream(
+        self,
+        messages: List[Dict[str, str]],
+        model: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 2048,
+    ) -> AsyncIterator[str]:
+        system_msg = ""
+        chat_messages = []
+        for m in messages:
+            if m["role"] == "system":
+                system_msg = m["content"]
+            else:
+                chat_messages.append(m)
+
+        async with self.client.messages.stream(
+            model=model or self.default_model,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            system=system_msg,
+            messages=chat_messages,
+        ) as stream:
+            async for text in stream.text_stream:
+                yield text
+
+    async def embed(self, texts: List[str]) -> List[List[float]]:
+        # Anthropic doesn't have native embeddings — fall back to OpenAI
+        raise NotImplementedError(
+            "Anthropic does not provide embeddings. "
+            "Configure OPENAI_API_KEY for embeddings."
+        )

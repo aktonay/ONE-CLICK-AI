@@ -1,0 +1,54 @@
+{# Feature Engineering #}
+"""
+Feature engineering utilities — scaling, encoding, selection.
+"""
+
+import logging
+from typing import Any, Dict, List, Optional
+import numpy as np
+
+logger = logging.getLogger(__name__)
+
+
+class FeatureEngineer:
+    """Feature engineering pipeline."""
+
+    def __init__(self):
+        self.scalers = {}
+        self.encoders = {}
+        self.feature_names: List[str] = []
+
+    def fit_transform(self, df, numeric_cols: List[str] = None, categorical_cols: List[str] = None):
+        """Fit and transform features."""
+        import pandas as pd
+        from sklearn.preprocessing import StandardScaler, LabelEncoder
+
+        result = df.copy()
+
+        # Scale numeric columns
+        if numeric_cols:
+            scaler = StandardScaler()
+            result[numeric_cols] = scaler.fit_transform(result[numeric_cols])
+            self.scalers["standard"] = scaler
+
+        # Encode categorical columns
+        if categorical_cols:
+            for col in categorical_cols:
+                le = LabelEncoder()
+                result[col] = le.fit_transform(result[col].astype(str))
+                self.encoders[col] = le
+
+        self.feature_names = list(result.columns)
+        logger.info(f"Engineered {len(self.feature_names)} features")
+        return result
+
+    def transform(self, df):
+        """Transform new data using fitted transformers."""
+        result = df.copy()
+        if "standard" in self.scalers:
+            numeric_cols = [c for c in result.select_dtypes(include=[np.number]).columns]
+            result[numeric_cols] = self.scalers["standard"].transform(result[numeric_cols])
+        for col, le in self.encoders.items():
+            if col in result.columns:
+                result[col] = le.transform(result[col].astype(str))
+        return result

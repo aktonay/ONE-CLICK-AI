@@ -1,0 +1,135 @@
+{# Guardrails API Routes #}
+"""
+AI Guardrails API — content safety, PII, prompt injection, audit.
+"""
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Optional
+
+router = APIRouter(prefix="/guardrails", tags=["AI Guardrails"])
+
+
+class ContentCheckRequest(BaseModel):
+    text: str
+    threshold: float = 0.7
+
+
+class ContentCheckResponse(BaseModel):
+    is_safe: bool
+    scores: Dict[str, float]
+    flagged: Dict[str, float]
+
+
+class PIIRequest(BaseModel):
+    text: str
+    entities: Optional[List[str]] = None
+    anonymize: bool = False
+
+
+class PIIResponse(BaseModel):
+    has_pii: bool
+    detections: List[Dict[str, Any]]
+    count: int
+    anonymized_text: Optional[str] = None
+
+
+class InjectionCheckRequest(BaseModel):
+    text: str
+
+
+class InjectionCheckResponse(BaseModel):
+    is_safe: bool
+    risk_score: float
+    pattern_matches: List[Dict[str, Any]]
+    heuristic_flags: List[str]
+
+
+class GuardRequest(BaseModel):
+    """Full guardrails check — content + PII + injection in one call."""
+    text: str
+    check_content: bool = True
+    check_pii: bool = True
+    check_injection: bool = True
+
+
+# ── Endpoints ────────────────────────────────────────────────────────
+
+@router.post("/content-check", response_model=ContentCheckResponse)
+async def check_content(request: ContentCheckRequest):
+    """Check text for toxic or unsafe content."""
+    from app.guardrails.content_filter import ContentFilter
+    cf = ContentFilter(threshold=request.threshold)
+    result = cf.check(request.text)
+    return ContentCheckResponse(**result)
+
+
+@router.post("/pii", response_model=PIIResponse)
+async def detect_pii(request: PIIRequest):
+    """Detect (and optionally anonymize) PII in text."""
+    from app.guardrails.pii_detector import PIIDetector
+    detector = PIIDetector()
+    result = detector.detect(request.text, entities=request.entities)
+    if request.anonymize:
+        anon = detector.anonymize(request.text, entities=request.entities)
+        result["anonymized_text"] = anon["anonymized_text"]
+    return PIIResponse(**result)
+
+
+@router.post("/injection-check", response_model=InjectionCheckResponse)
+async def check_injection(request: InjectionCheckRequest):
+    """Check for prompt injection attacks."""
+    from app.guardrails.prompt_injection import PromptInjectionDetector
+    detector = PromptInjectionDetector()
+    result = detector.detect(request.text)
+    return InjectionCheckResponse(**result)
+
+
+@router.post("/guard")
+async def full_guard(request: GuardRequest):
+    """Run all guardrails checks in one call."""
+    results = {"text_length": len(request.text), "passed": True}
+
+    if request.check_content:
+        from app.guardrails.content_filter import ContentFilter
+        cf = ContentFilter()
+        results["content"] = cf.check(request.text)
+        if not results["content"]["is_safe"]:
+            results["passed"] = False
+
+    if request.check_pii:
+        from app.guardrails.pii_detector import PIIDetector
+        pii = PIIDetector()
+        results["pii"] = pii.detect(request.text)
+        if results["pii"]["has_pii"]:
+            results["pii"]["anonymized"] = pii.anonymize(request.text)["anonymized_text"]
+
+    if request.check_injection:
+        from app.guardrails.prompt_injection import PromptInjectionDetector
+        inj = PromptInjectionDetector()
+        results["injection"] = inj.detect(request.text)
+        if not results["injection"]["is_safe"]:
+            results["passed"] = False
+
+    return results
+
+
+@router.get("/audit/stats")
+async def get_audit_stats(date: Optional[str] = None):
+    """Get audit log statistics."""
+    from app.guardrails.audit_logger import AuditLogger
+    audit = AuditLogger()
+    return audit.get_stats(date=date)
+
+
+@router.get("/audit/logs")
+async def get_audit_logs(
+    date: Optional[str] = None,
+    event_type: Optional[str] = None,
+    user_id: Optional[str] = None,
+    limit: int = 50,
+):
+    """Query audit logs."""
+    from app.guardrails.audit_logger import AuditLogger
+    audit = AuditLogger()
+    return audit.query_logs(date=date, event_type=event_type, user_id=user_id, limit=limit)

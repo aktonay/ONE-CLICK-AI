@@ -1,0 +1,64 @@
+"""
+Prompt template manager.
+Keeps system prompts and RAG templates in one place.
+"""
+
+from typing import Dict, List, Optional
+
+# ── Default system prompts ──
+
+SYSTEM_PROMPT_DEFAULT = """You are a helpful AI assistant. Answer the user's questions clearly and concisely."""
+
+SYSTEM_PROMPT_RAG = """You are a knowledgeable AI assistant. Use ONLY the provided context to answer the user's question. If the context does not contain the answer, say so honestly.
+
+Context:
+{context}
+
+Important rules:
+- Cite sources when possible using [1], [2], etc.
+- If unsure, say "I don't have enough information to answer that."
+- Be concise but thorough.
+"""
+
+SYSTEM_PROMPT_AGENT = """You are an AI agent with access to tools. Think step by step:
+1. Understand the task
+2. Decide which tool to use
+3. Execute the tool
+4. Observe the result
+5. Repeat until done or give a final answer
+
+Available tools: {tools}
+"""
+
+SYSTEM_PROMPT_EMOTION_AWARE = """You are an empathetic AI assistant. The user's detected emotion is: {emotion} (confidence: {confidence:.0%}).
+Adapt your tone accordingly — be supportive, calm, or energetic as appropriate."""
+
+
+class PromptManager:
+    """Build prompts for different use-cases."""
+
+    @staticmethod
+    def build_chat_prompt(system: Optional[str] = None) -> str:
+        return system or SYSTEM_PROMPT_DEFAULT
+
+    @staticmethod
+    def build_rag_prompt(question: str, context: str) -> List[Dict[str, str]]:
+        return [
+            {"role": "system", "content": SYSTEM_PROMPT_RAG.format(context=context)},
+            {"role": "user", "content": question},
+        ]
+
+    @staticmethod
+    def build_agent_prompt(task: str, tools: List[str]) -> List[Dict[str, str]]:
+        return [
+            {"role": "system", "content": SYSTEM_PROMPT_AGENT.format(tools=", ".join(tools))},
+            {"role": "user", "content": task},
+        ]
+
+    @staticmethod
+    def build_emotion_prompt(base_prompt: str, emotion: str, confidence: float) -> str:
+        return (
+            SYSTEM_PROMPT_EMOTION_AWARE.format(emotion=emotion, confidence=confidence)
+            + "\n\n"
+            + base_prompt
+        )

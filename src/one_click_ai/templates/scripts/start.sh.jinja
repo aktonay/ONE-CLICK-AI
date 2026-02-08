@@ -1,0 +1,24 @@
+#!/bin/bash
+# Start {{ project_name }} in development mode
+set -e
+
+echo "🚀 Starting {{ project_name }}..."
+
+# Check for .env
+if [ ! -f .env ]; then
+    echo "⚠️  No .env file found. Copying from .env.example..."
+    cp .env.example .env
+    echo "📝 Please edit .env with your API keys."
+    exit 1
+fi
+
+# Create data dirs
+mkdir -p data/vector_indexes data/storage logs
+
+# Activate venv if exists
+if [ -d ".venv" ]; then
+    source .venv/bin/activate
+fi
+
+# Start
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload

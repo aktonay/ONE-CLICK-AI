@@ -1,0 +1,38 @@
+"""
+Unified LLM client abstraction.
+All providers implement the same interface so they can be swapped via config.
+"""
+
+from abc import ABC, abstractmethod
+from typing import AsyncIterator, Dict, List, Optional
+
+
+class BaseLLMClient(ABC):
+    """Base interface every LLM provider must implement."""
+
+    @abstractmethod
+    async def chat(
+        self,
+        messages: List[Dict[str, str]],
+        model: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 2048,
+    ) -> Dict:
+        """Single-turn chat completion → dict with 'content', 'model', 'usage'."""
+        ...
+
+    @abstractmethod
+    async def chat_stream(
+        self,
+        messages: List[Dict[str, str]],
+        model: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 2048,
+    ) -> AsyncIterator[str]:
+        """Streaming chat completion → yields content chunks."""
+        ...
+
+    @abstractmethod
+    async def embed(self, texts: List[str]) -> List[List[float]]:
+        """Generate embeddings for a list of texts."""
+        ...

@@ -1,0 +1,125 @@
+{# ML API Routes #}
+"""
+ML training & prediction API endpoints.
+"""
+
+from fastapi import APIRouter, HTTPException, UploadFile, File, BackgroundTasks
+from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Optional
+
+router = APIRouter(prefix="/ml", tags=["Machine Learning"])
+
+
+# ── Schemas ──────────────────────────────────────────────────────────
+
+class TrainRequest(BaseModel):
+    model_name: str = "default_model"
+    framework: str = "{{ 'pytorch' if pytorch else 'sklearn' }}"
+    task_type: str = "classification"
+    epochs: int = 100
+    batch_size: int = 32
+    learning_rate: float = 1e-3
+    params: Dict[str, Any] = Field(default_factory=dict)
+
+
+class PredictRequest(BaseModel):
+    model_name: str
+    data: List[List[float]]
+    framework: str = "{{ 'pytorch' if pytorch else 'sklearn' }}"
+
+
+class PredictResponse(BaseModel):
+    predictions: List[Any]
+    probabilities: Optional[List[Any]] = None
+    model_name: str
+
+
+class TrainResponse(BaseModel):
+    status: str
+    experiment_id: str
+    message: str
+
+
+class ModelInfo(BaseModel):
+    name: str
+    version: str
+    framework: str
+    metrics: Dict[str, float]
+    status: str
+
+
+# ── Endpoints ────────────────────────────────────────────────────────
+
+@router.post("/train", response_model=TrainResponse)
+async def train_model(request: TrainRequest, background_tasks: BackgroundTasks):
+    """Start a model training job (background)."""
+    import uuid
+    experiment_id = str(uuid.uuid4())[:8]
+
+    # In production, push to a task queue (Celery/ARQ)
+    background_tasks.add_task(_run_training, experiment_id, request)
+
+    return TrainResponse(
+        status="started",
+        experiment_id=experiment_id,
+        message=f"Training job {experiment_id} started in background",
+    )
+
+
+@router.post("/predict", response_model=PredictResponse)
+async def predict(request: PredictRequest):
+    """Run prediction with a trained model."""
+    from app.ml.predictor import ModelPredictor
+    try:
+        predictor = ModelPredictor(
+            model_path=f"models/exported/{request.model_name}",
+            framework=request.framework,
+        )
+        result = predictor.predict(request.data)
+        return PredictResponse(model_name=request.model_name, **result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/models", response_model=List[ModelInfo])
+async def list_models():
+    """List all registered models."""
+    from app.ml.model_registry import ModelRegistry
+    registry = ModelRegistry()
+    entries = registry.list_models()
+    return [ModelInfo(**e) for e in entries]
+
+
+@router.post("/models/{name}/promote")
+async def promote_model(name: str, version: str):
+    """Promote a model version to production."""
+    from app.ml.model_registry import ModelRegistry
+    registry = ModelRegistry()
+    registry.promote(name, version)
+    return {"status": "promoted", "name": name, "version": version}
+
+
+{% if sklearn %}
+@router.post("/auto-select")
+async def auto_select(data_path: str = "datasets/raw/data.csv", target_column: str = "target"):
+    """Automatically try multiple sklearn models and return the best."""
+    from app.ml.data_loader import load_csv
+    from app.ml.sklearn_models import auto_select_best_model
+    X, y = load_csv(data_path, target_column=target_column)
+    result = auto_select_best_model(X, y, task="classification")
+    return {
+        "best_model": result["name"],
+        "score": result["score"],
+        "all_results": result["all_results"],
+    }
+{% endif %}
+
+
+# ── Background Tasks ─────────────────────────────────────────────────
+
+async def _run_training(experiment_id: str, request: TrainRequest):
+    """Execute training in background."""
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"[{experiment_id}] Training {request.model_name} with {request.framework}")
+    # Implement actual training orchestration here

@@ -1,0 +1,95 @@
+{# PII Detector #}
+"""
+PII detection and anonymization using Microsoft Presidio.
+"""
+
+import logging
+from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
+
+
+class PIIDetector:
+    """Detect and anonymize Personally Identifiable Information."""
+
+    def __init__(self, language: str = "en"):
+        self.language = language
+        self._analyzer = None
+        self._anonymizer = None
+
+    def _init(self):
+        if self._analyzer is not None:
+            return
+        from presidio_analyzer import AnalyzerEngine
+        from presidio_anonymizer import AnonymizerEngine
+        self._analyzer = AnalyzerEngine()
+        self._anonymizer = AnonymizerEngine()
+        logger.info("Presidio PII analyzer initialized")
+
+    def detect(self, text: str, entities: List[str] = None) -> Dict[str, Any]:
+        """Detect PII entities in text."""
+        self._init()
+        if entities is None:
+            entities = [
+                "PERSON", "EMAIL_ADDRESS", "PHONE_NUMBER", "CREDIT_CARD",
+                "IBAN_CODE", "US_SSN", "IP_ADDRESS", "LOCATION",
+                "DATE_TIME", "NRP", "MEDICAL_LICENSE", "US_DRIVER_LICENSE",
+            ]
+
+        results = self._analyzer.analyze(
+            text=text,
+            language=self.language,
+            entities=entities,
+        )
+
+        detections = []
+        for r in results:
+            detections.append({
+                "entity_type": r.entity_type,
+                "text": text[r.start:r.end],
+                "score": round(r.score, 4),
+                "start": r.start,
+                "end": r.end,
+            })
+
+        return {
+            "has_pii": len(detections) > 0,
+            "detections": detections,
+            "count": len(detections),
+        }
+
+    def anonymize(self, text: str, entities: List[str] = None) -> Dict[str, Any]:
+        """Detect and anonymize PII in text."""
+        self._init()
+        if entities is None:
+            entities = ["PERSON", "EMAIL_ADDRESS", "PHONE_NUMBER", "CREDIT_CARD", "US_SSN"]
+
+        analysis = self._analyzer.analyze(
+            text=text,
+            language=self.language,
+            entities=entities,
+        )
+
+        result = self._anonymizer.anonymize(text=text, analyzer_results=analysis)
+
+        return {
+            "original_text": text,
+            "anonymized_text": result.text,
+            "entities_found": len(analysis),
+        }
+
+    def scan_before_llm(self, prompt: str) -> Dict[str, Any]:
+        """Scan user prompt for PII before sending to LLM."""
+        detection = self.detect(prompt)
+        if detection["has_pii"]:
+            anonymized = self.anonymize(prompt)
+            return {
+                "action": "anonymized",
+                "safe_prompt": anonymized["anonymized_text"],
+                "pii_found": detection["detections"],
+            }
+        return {
+            "action": "pass",
+            "safe_prompt": prompt,
+            "pii_found": [],
+        }

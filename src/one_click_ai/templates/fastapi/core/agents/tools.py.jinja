@@ -1,0 +1,80 @@
+"""Built-in agent tools — web search, knowledge base, calculator, etc."""
+
+from typing import Dict
+import json
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class ToolRegistry:
+    """Manages tool definitions and their execution callables."""
+
+    def __init__(self):
+        self._tools: Dict[str, Dict] = {}
+        self._executors: Dict[str, callable] = {}
+
+    def register(self, name: str, definition: Dict, executor: callable) -> None:
+        self._tools[name] = definition
+        self._executors[name] = executor
+
+    def get_definitions(self) -> list:
+        return list(self._tools.values())
+
+    async def execute(self, name: str, args: Dict) -> str:
+        if name not in self._executors:
+            return json.dumps({"error": f"Unknown tool: {name}"})
+        try:
+            result = await self._executors[name](**args)
+            return json.dumps(result, default=str) if isinstance(result, (dict, list)) else str(result)
+        except Exception as e:
+            logger.error("Tool %s failed: %s", name, e)
+            return json.dumps({"error": str(e)})
+
+
+# ── Calculator tool ────────────────────────────────────────────────
+CALCULATOR_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "calculator",
+        "description": "Evaluate a mathematical expression",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "expression": {"type": "string", "description": "Math expression, e.g. '2 + 2 * 3'"},
+            },
+            "required": ["expression"],
+        },
+    },
+}
+
+
+async def calculator_executor(expression: str) -> Dict:
+    """Safely evaluate a math expression."""
+    import ast
+    import operator
+
+    ops = {
+        ast.Add: operator.add,
+        ast.Sub: operator.sub,
+        ast.Mult: operator.mul,
+        ast.Div: operator.truediv,
+        ast.Pow: operator.pow,
+        ast.USub: operator.neg,
+    }
+
+    def _eval(node):
+        if isinstance(node, ast.Constant):
+            return node.value
+        elif isinstance(node, ast.BinOp):
+            return ops[type(node.op)](_eval(node.left), _eval(node.right))
+        elif isinstance(node, ast.UnaryOp):
+            return ops[type(node.op)](_eval(node.operand))
+        raise ValueError(f"Unsupported: {ast.dump(node)}")
+
+    try:
+        tree = ast.parse(expression, mode="eval")
+        result = _eval(tree.body)
+        return {"expression": expression, "result": result}
+    except Exception as e:
+        return {"expression": expression, "error": str(e)}

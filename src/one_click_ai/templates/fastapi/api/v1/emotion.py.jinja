@@ -1,0 +1,48 @@
+"""Emotion detection endpoints."""
+
+from fastapi import APIRouter, UploadFile, File, HTTPException
+from pydantic import BaseModel, Field
+from typing import Optional, Dict, List
+
+router = APIRouter()
+
+
+class EmotionTextRequest(BaseModel):
+    text: str = Field(..., min_length=1)
+
+
+class EmotionResult(BaseModel):
+    primary_emotion: str
+    confidence: float
+    all_emotions: Dict[str, float] = {}
+
+
+@router.post("/analyze/audio", response_model=EmotionResult)
+async def emotion_from_audio(audio: UploadFile = File(...)):
+    """
+    Detect emotion from an audio sample (voice prosody).
+    """
+    from app.services.emotion_service import EmotionService
+
+    try:
+        service = EmotionService()
+        content = await audio.read()
+        result = await service.analyze_audio(content)
+        return EmotionResult(**result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/analyze/text", response_model=EmotionResult)
+async def emotion_from_text(request: EmotionTextRequest):
+    """
+    Detect emotion from text input.
+    """
+    from app.services.emotion_service import EmotionService
+
+    try:
+        service = EmotionService()
+        result = await service.analyze_text(request.text)
+        return EmotionResult(**result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -1,0 +1,54 @@
+"""
+Central router aggregation for v1 API.
+"""
+
+from fastapi import APIRouter
+from app.api.v1 import health, chat
+{% if rag %}
+from app.api.v1 import rag, documents
+{% endif %}
+{% if voice %}
+from app.api.v1 import voice
+{% endif %}
+{% if vision %}
+from app.api.v1 import vision
+{% endif %}
+{% if emotion %}
+from app.api.v1 import emotion
+{% endif %}
+{% if search %}
+from app.api.v1 import search
+{% endif %}
+{% if agents %}
+from app.api.v1 import agents
+{% endif %}
+{% if session %}
+from app.api.v1 import sessions
+{% endif %}
+
+api_router = APIRouter()
+
+api_router.include_router(health.router, prefix="/health", tags=["Health"])
+api_router.include_router(chat.router, prefix="/chat", tags=["Chat"])
+{% if rag %}
+api_router.include_router(rag.router, prefix="/rag", tags=["RAG"])
+api_router.include_router(documents.router, prefix="/documents", tags=["Documents"])
+{% endif %}
+{% if voice %}
+api_router.include_router(voice.router, prefix="/voice", tags=["Voice"])
+{% endif %}
+{% if vision %}
+api_router.include_router(vision.router, prefix="/vision", tags=["Vision"])
+{% endif %}
+{% if emotion %}
+api_router.include_router(emotion.router, prefix="/emotion", tags=["Emotion"])
+{% endif %}
+{% if search %}
+api_router.include_router(search.router, prefix="/search", tags=["Search"])
+{% endif %}
+{% if agents %}
+api_router.include_router(agents.router, prefix="/agents", tags=["Agents"])
+{% endif %}
+{% if session %}
+api_router.include_router(sessions.router, prefix="/sessions", tags=["Sessions"])
+{% endif %}

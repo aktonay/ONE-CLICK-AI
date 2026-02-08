@@ -1,0 +1,129 @@
+"""Session service — manages user sessions with persistence."""
+
+from typing import Dict, List, Optional
+from app.config import get_settings
+import json
+import time
+import uuid
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class SessionService:
+    """Session management backed by Redis or in-memory store."""
+
+    def __init__(self):
+        self.settings = get_settings()
+        self._redis = None
+        self._local: Dict[str, Dict] = {}
+
+    async def _get_redis(self):
+        if self._redis is None:
+            {% if context.get("redis", False) %}
+            try:
+                import redis.asyncio as aioredis
+
+                self._redis = aioredis.from_url(
+                    self.settings.REDIS_URL, decode_responses=True
+                )
+                await self._redis.ping()
+                logger.info("Session store: Redis connected")
+            except Exception as e:
+                logger.warning("Redis unavailable, using in-memory: %s", e)
+                self._redis = None
+            {% endif %}
+        return self._redis
+
+    async def create(self, user_id: Optional[str] = None) -> Dict:
+        session_id = str(uuid.uuid4())
+        session = {
+            "session_id": session_id,
+            "user_id": user_id,
+            "created_at": time.time(),
+            "updated_at": time.time(),
+            "messages": [],
+            "metadata": {},
+        }
+        redis = await self._get_redis()
+        if redis:
+            await redis.set(
+                f"session:{session_id}",
+                json.dumps(session),
+                ex=self.settings.SESSION_TTL,
+            )
+        else:
+            self._local[session_id] = session
+        return session
+
+    async def get(self, session_id: str) -> Optional[Dict]:
+        redis = await self._get_redis()
+        if redis:
+            data = await redis.get(f"session:{session_id}")
+            return json.loads(data) if data else None
+        return self._local.get(session_id)
+
+    async def add_message(self, session_id: str, role: str, content: str) -> bool:
+        session = await self.get(session_id)
+        if not session:
+            return False
+
+        session["messages"].append({"role": role, "content": content, "timestamp": time.time()})
+        session["updated_at"] = time.time()
+
+        # Trim to max messages
+        max_msgs = self.settings.MAX_SESSION_MESSAGES
+        if len(session["messages"]) > max_msgs:
+            session["messages"] = session["messages"][-max_msgs:]
+
+        redis = await self._get_redis()
+        if redis:
+            await redis.set(
+                f"session:{session_id}",
+                json.dumps(session),
+                ex=self.settings.SESSION_TTL,
+            )
+        else:
+            self._local[session_id] = session
+        return True
+
+    async def get_history(self, session_id: str, limit: int = 50) -> List[Dict]:
+        session = await self.get(session_id)
+        if not session:
+            return []
+        return session["messages"][-limit:]
+
+    async def delete(self, session_id: str) -> bool:
+        redis = await self._get_redis()
+        if redis:
+            return bool(await redis.delete(f"session:{session_id}"))
+        return bool(self._local.pop(session_id, None))
+
+    async def list_sessions(self, user_id: Optional[str] = None) -> List[Dict]:
+        redis = await self._get_redis()
+        if redis:
+            keys = await redis.keys("session:*")
+            sessions = []
+            for key in keys[:100]:
+                data = await redis.get(key)
+                if data:
+                    s = json.loads(data)
+                    if user_id is None or s.get("user_id") == user_id:
+                        sessions.append({
+                            "session_id": s["session_id"],
+                            "user_id": s.get("user_id"),
+                            "created_at": s["created_at"],
+                            "message_count": len(s.get("messages", [])),
+                        })
+            return sessions
+        else:
+            return [
+                {
+                    "session_id": s["session_id"],
+                    "user_id": s.get("user_id"),
+                    "created_at": s["created_at"],
+                    "message_count": len(s.get("messages", [])),
+                }
+                for s in self._local.values()
+                if user_id is None or s.get("user_id") == user_id
+            ]

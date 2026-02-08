@@ -1,0 +1,68 @@
+"""Document ingestion — load and parse various file formats."""
+
+from pathlib import Path
+from typing import List, Dict
+import logging
+
+logger = logging.getLogger(__name__)
+
+SUPPORTED_TYPES = {
+    "application/pdf": "pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+    "text/plain": "txt",
+    "text/markdown": "md",
+    "text/csv": "csv",
+    "text/html": "html",
+    "image/png": "image",
+    "image/jpeg": "image",
+}
+
+
+async def load_document(content: bytes, filename: str, content_type: str) -> str:
+    """Extract text from a document based on its MIME type."""
+    file_type = SUPPORTED_TYPES.get(content_type, "txt")
+
+    if file_type == "pdf":
+        return _load_pdf(content)
+    elif file_type == "docx":
+        return _load_docx(content)
+    elif file_type == "image":
+        return _load_image_ocr(content)
+    elif file_type in ("txt", "md", "csv", "html"):
+        return content.decode("utf-8", errors="replace")
+    else:
+        logger.warning("Unknown file type %s for %s — treating as plain text", content_type, filename)
+        return content.decode("utf-8", errors="replace")
+
+
+def _load_pdf(content: bytes) -> str:
+    """Extract text from PDF using pypdf."""
+    import io
+    from pypdf import PdfReader
+
+    reader = PdfReader(io.BytesIO(content))
+    pages = [page.extract_text() or "" for page in reader.pages]
+    return "\n\n".join(pages)
+
+
+def _load_docx(content: bytes) -> str:
+    """Extract text from DOCX using python-docx."""
+    import io
+    from docx import Document
+
+    doc = Document(io.BytesIO(content))
+    return "\n\n".join(p.text for p in doc.paragraphs if p.text.strip())
+
+
+def _load_image_ocr(content: bytes) -> str:
+    """Extract text from image using OCR (pillow + pytesseract)."""
+    try:
+        import pytesseract
+        from PIL import Image
+        import io
+
+        image = Image.open(io.BytesIO(content))
+        return pytesseract.image_to_string(image)
+    except ImportError:
+        logger.warning("pytesseract not installed — skipping OCR")
+        return "[Image uploaded — OCR not available. Install pytesseract.]"

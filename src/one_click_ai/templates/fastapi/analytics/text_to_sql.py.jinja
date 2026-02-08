@@ -1,0 +1,95 @@
+{# Text-to-SQL Engine #}
+"""
+Convert natural language questions to SQL queries using LLM.
+"""
+
+import logging
+from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
+
+
+class TextToSQLEngine:
+    """Natural language → SQL query engine."""
+
+    def __init__(self, db_url: str = "sqlite:///data.db", llm_provider: str = "{{ llm_provider }}"):
+        self.db_url = db_url
+        self.llm_provider = llm_provider
+        self._engine = None
+
+    def _get_db_engine(self):
+        if self._engine is None:
+            from sqlalchemy import create_engine
+            self._engine = create_engine(self.db_url)
+        return self._engine
+
+    def get_schema(self) -> str:
+        """Extract database schema as text."""
+        from sqlalchemy import inspect
+        engine = self._get_db_engine()
+        inspector = inspect(engine)
+        schema_parts = []
+        for table in inspector.get_table_names():
+            cols = inspector.get_columns(table)
+            col_defs = ", ".join(f"{c['name']} {c['type']}" for c in cols)
+            schema_parts.append(f"CREATE TABLE {table} ({col_defs});")
+        return "\n".join(schema_parts)
+
+    def generate_sql(self, question: str) -> Dict[str, Any]:
+        """Convert natural language to SQL."""
+        schema = self.get_schema()
+        prompt = f"""You are an expert SQL analyst. Given the database schema:
+
+{schema}
+
+Convert this question to a SQL query:
+Question: {question}
+
+Return ONLY the SQL query, nothing else."""
+
+        # Call LLM to generate SQL
+        sql = self._call_llm(prompt)
+
+        # Validate SQL
+        import sqlparse
+        parsed = sqlparse.parse(sql)
+        is_valid = len(parsed) > 0 and parsed[0].get_type() in ("SELECT", "UNKNOWN")
+
+        return {
+            "question": question,
+            "sql": sql.strip(),
+            "is_valid": is_valid,
+        }
+
+    def execute_query(self, sql: str) -> Dict[str, Any]:
+        """Execute SQL query and return results."""
+        import pandas as pd
+        engine = self._get_db_engine()
+
+        # Safety: only allow SELECT queries
+        if not sql.strip().upper().startswith("SELECT"):
+            return {"error": "Only SELECT queries are allowed"}
+
+        try:
+            df = pd.read_sql(sql, engine)
+            return {
+                "columns": list(df.columns),
+                "rows": df.to_dict(orient="records"),
+                "row_count": len(df),
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
+    def ask(self, question: str) -> Dict[str, Any]:
+        """Full pipeline: question → SQL → results."""
+        gen = self.generate_sql(question)
+        if not gen["is_valid"]:
+            return {**gen, "error": "Generated SQL appears invalid"}
+        result = self.execute_query(gen["sql"])
+        return {**gen, **result}
+
+    def _call_llm(self, prompt: str) -> str:
+        """Call LLM provider for SQL generation."""
+        # Placeholder — integrate with your LLM service
+        logger.info(f"Calling {self.llm_provider} for SQL generation")
+        return "SELECT * FROM data LIMIT 10"

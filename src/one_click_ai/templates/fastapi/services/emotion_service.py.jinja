@@ -1,0 +1,18 @@
+"""Emotion service — emotion detection from audio and text."""
+
+from typing import Dict
+from app.core.multimodal.emotion import EmotionClient
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class EmotionService:
+    def __init__(self):
+        self.client = EmotionClient()
+
+    async def analyze_audio(self, audio_bytes: bytes) -> Dict:
+        return await self.client.analyze_audio(audio_bytes)
+
+    async def analyze_text(self, text: str) -> Dict:
+        return await self.client.analyze_text(text)

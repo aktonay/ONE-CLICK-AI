@@ -1,0 +1,43 @@
+"""Abstract base for vector store implementations."""
+
+from abc import ABC, abstractmethod
+from typing import Dict, List, Optional
+from dataclasses import dataclass
+
+
+@dataclass
+class VectorRecord:
+    id: str
+    text: str
+    embedding: List[float]
+    metadata: Dict | None = None
+    score: float | None = None
+
+
+class BaseVectorStore(ABC):
+    """Common interface for all vector store backends."""
+
+    @abstractmethod
+    async def initialize(self) -> None:
+        ...
+
+    @abstractmethod
+    async def add(self, records: List[VectorRecord]) -> int:
+        ...
+
+    @abstractmethod
+    async def search(
+        self, query_embedding: List[float], top_k: int = 5, filters: Optional[Dict] = None
+    ) -> List[VectorRecord]:
+        ...
+
+    @abstractmethod
+    async def delete(self, ids: List[str]) -> int:
+        ...
+
+    @abstractmethod
+    async def count(self) -> int:
+        ...
+
+    async def close(self) -> None:
+        pass

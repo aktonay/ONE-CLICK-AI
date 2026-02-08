@@ -1,0 +1,83 @@
+"""Database session management."""
+
+from app.config import get_settings
+import logging
+
+logger = logging.getLogger(__name__)
+
+settings = get_settings()
+
+{% if context.get("postgres", False) %}
+# ── PostgreSQL (async via asyncpg + SQLAlchemy) ─────────────────────
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+
+engine = create_async_engine(
+    settings.DATABASE_URL,
+    echo=settings.DEBUG,
+    pool_size=10,
+    max_overflow=20,
+)
+
+async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+
+async def get_db() -> AsyncSession:
+    async with async_session() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+{% endif %}
+
+{% if context.get("mongodb", False) %}
+# ── MongoDB (async via motor) ──────────────────────────────────────
+from motor.motor_asyncio import AsyncIOMotorClient
+
+_mongo_client: AsyncIOMotorClient | None = None
+
+
+def get_mongo_client() -> AsyncIOMotorClient:
+    global _mongo_client
+    if _mongo_client is None:
+        _mongo_client = AsyncIOMotorClient(settings.MONGODB_URL)
+    return _mongo_client
+
+
+def get_mongo_db():
+    client = get_mongo_client()
+    return client[settings.MONGODB_DATABASE]
+
+
+async def close_mongo() -> None:
+    global _mongo_client
+    if _mongo_client:
+        _mongo_client.close()
+        _mongo_client = None
+{% endif %}
+
+{% if context.get("redis", False) %}
+# ── Redis (async) ──────────────────────────────────────────────────
+import redis.asyncio as aioredis
+
+_redis_client = None
+
+
+async def get_redis():
+    global _redis_client
+    if _redis_client is None:
+        _redis_client = aioredis.from_url(
+            settings.REDIS_URL, decode_responses=True
+        )
+    return _redis_client
+
+
+async def close_redis() -> None:
+    global _redis_client
+    if _redis_client:
+        await _redis_client.close()
+        _redis_client = None
+{% endif %}

@@ -1,0 +1,61 @@
+{# Content Filter #}
+"""
+Content safety filter — detect toxic, harmful, NSFW content.
+"""
+
+import logging
+from typing import Any, Dict, List
+
+logger = logging.getLogger(__name__)
+
+
+class ContentFilter:
+    """AI content safety filter using Detoxify and custom rules."""
+
+    def __init__(self, threshold: float = 0.7):
+        self.threshold = threshold
+        self._model = None
+
+    def _load_model(self):
+        if self._model is not None:
+            return
+        from detoxify import Detoxify
+        self._model = Detoxify("multilingual")
+        logger.info("Content filter model loaded (Detoxify)")
+
+    def check(self, text: str) -> Dict[str, Any]:
+        """Check text for toxic content."""
+        self._load_model()
+        scores = self._model.predict(text)
+
+        flagged_categories = {}
+        is_safe = True
+        for category, score in scores.items():
+            if score > self.threshold:
+                flagged_categories[category] = float(score)
+                is_safe = False
+
+        return {
+            "text": text[:200] + "..." if len(text) > 200 else text,
+            "is_safe": is_safe,
+            "scores": {k: round(float(v), 4) for k, v in scores.items()},
+            "flagged": flagged_categories,
+        }
+
+    def check_batch(self, texts: List[str]) -> List[Dict[str, Any]]:
+        """Check multiple texts."""
+        return [self.check(t) for t in texts]
+
+    def filter_response(self, response_text: str) -> Dict[str, Any]:
+        """Filter an LLM response before sending to user."""
+        result = self.check(response_text)
+        if not result["is_safe"]:
+            return {
+                "original_blocked": True,
+                "flagged_categories": result["flagged"],
+                "safe_response": "I'm sorry, I cannot provide that content as it was flagged for safety concerns.",
+            }
+        return {
+            "original_blocked": False,
+            "response": response_text,
+        }

@@ -1,0 +1,60 @@
+{# CV Preprocessing #}
+"""
+Image preprocessing utilities — resize, normalize, augment.
+"""
+
+import logging
+from typing import Tuple
+import numpy as np
+
+logger = logging.getLogger(__name__)
+
+
+def load_image(path: str) -> np.ndarray:
+    """Load image from file path."""
+    from PIL import Image
+    img = Image.open(path).convert("RGB")
+    return np.array(img)
+
+
+def resize(image: np.ndarray, size: Tuple[int, int] = (640, 640)) -> np.ndarray:
+    """Resize image."""
+    from PIL import Image
+    img = Image.fromarray(image)
+    img = img.resize(size, Image.LANCZOS)
+    return np.array(img)
+
+
+def normalize(image: np.ndarray, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)) -> np.ndarray:
+    """ImageNet normalization."""
+    image = image.astype(np.float32) / 255.0
+    image = (image - np.array(mean)) / np.array(std)
+    return image
+
+
+{% if pytorch %}
+def to_tensor(image: np.ndarray):
+    """Convert numpy image (H, W, C) to PyTorch tensor (C, H, W)."""
+    import torch
+    if image.ndim == 3:
+        image = np.transpose(image, (2, 0, 1))
+    return torch.tensor(image, dtype=torch.float32).unsqueeze(0)
+{% endif %}
+
+
+def augment(image: np.ndarray, augmentations: list = None) -> np.ndarray:
+    """Apply basic augmentations."""
+    from PIL import Image, ImageEnhance
+    import random
+    img = Image.fromarray(image)
+
+    if random.random() > 0.5:
+        img = img.transpose(Image.FLIP_LEFT_RIGHT)
+    if random.random() > 0.5:
+        enhancer = ImageEnhance.Brightness(img)
+        img = enhancer.enhance(random.uniform(0.8, 1.2))
+    if random.random() > 0.5:
+        enhancer = ImageEnhance.Contrast(img)
+        img = enhancer.enhance(random.uniform(0.8, 1.2))
+
+    return np.array(img)

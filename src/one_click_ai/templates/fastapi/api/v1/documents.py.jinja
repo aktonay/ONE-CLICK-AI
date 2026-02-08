@@ -1,0 +1,46 @@
+"""Document upload & management endpoints."""
+
+from fastapi import APIRouter, UploadFile, File, HTTPException
+from typing import List
+
+router = APIRouter()
+
+
+@router.post("/upload")
+async def upload_documents(files: List[UploadFile] = File(...)):
+    """
+    Upload documents for RAG ingestion.
+    Supported: PDF, DOCX, TXT, MD, CSV, HTML, images (OCR).
+    """
+    from app.services.rag_service import RAGService
+
+    service = RAGService()
+    results = []
+
+    for file in files:
+        try:
+            content = await file.read()
+            result = await service.ingest_document(
+                filename=file.filename or "unknown",
+                content=content,
+                content_type=file.content_type or "application/octet-stream",
+            )
+            results.append({"filename": file.filename, "status": "ok", **result})
+        except Exception as e:
+            results.append({"filename": file.filename, "status": "error", "detail": str(e)})
+
+    return {"uploaded": len(results), "results": results}
+
+
+@router.get("/")
+async def list_documents():
+    """List all ingested documents."""
+    # TODO: implement document registry
+    return {"documents": []}
+
+
+@router.delete("/{document_id}")
+async def delete_document(document_id: str):
+    """Remove a document and its vectors."""
+    # TODO: implement
+    return {"deleted": document_id}

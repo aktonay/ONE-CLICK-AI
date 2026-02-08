@@ -1,0 +1,76 @@
+{# ML Predictor #}
+"""
+Unified prediction service — load models and run inference.
+"""
+
+import logging
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
+
+
+class ModelPredictor:
+    """Load a trained model and run predictions."""
+
+    def __init__(self, model_path: str, framework: str = "pytorch"):
+        self.model_path = model_path
+        self.framework = framework
+        self.model = None
+        self._load()
+
+    def _load(self):
+{% if pytorch %}
+        if self.framework == "pytorch":
+            import torch
+            self.model = torch.jit.load(self.model_path) if self.model_path.endswith(".pt") else None
+            logger.info(f"PyTorch model loaded from {self.model_path}")
+            return
+{% endif %}
+{% if sklearn %}
+        if self.framework == "sklearn":
+            import joblib
+            self.model = joblib.load(self.model_path)
+            logger.info(f"sklearn model loaded from {self.model_path}")
+            return
+{% endif %}
+{% if xgboost %}
+        if self.framework == "xgboost":
+            import xgboost as xgb
+            self.model = xgb.Booster()
+            self.model.load_model(self.model_path)
+            logger.info(f"XGBoost model loaded from {self.model_path}")
+            return
+{% endif %}
+        raise ValueError(f"Unsupported framework: {self.framework}")
+
+    def predict(self, data: Any) -> Dict[str, Any]:
+        """Run prediction on input data."""
+{% if pytorch %}
+        if self.framework == "pytorch":
+            import torch
+            self.model.eval()
+            with torch.no_grad():
+                if not isinstance(data, torch.Tensor):
+                    data = torch.tensor(data, dtype=torch.float32)
+                output = self.model(data)
+                probabilities = torch.softmax(output, dim=-1)
+                predicted_class = torch.argmax(probabilities, dim=-1)
+                return {
+                    "predictions": predicted_class.tolist(),
+                    "probabilities": probabilities.tolist(),
+                }
+{% endif %}
+{% if sklearn %}
+        if self.framework == "sklearn":
+            predictions = self.model.predict(data)
+            result = {"predictions": predictions.tolist()}
+            if hasattr(self.model, "predict_proba"):
+                result["probabilities"] = self.model.predict_proba(data).tolist()
+            return result
+{% endif %}
+        return {"error": "Model not loaded"}
+
+    def predict_batch(self, data_list: List[Any]) -> List[Dict[str, Any]]:
+        """Batch prediction."""
+        return [self.predict(item) for item in data_list]

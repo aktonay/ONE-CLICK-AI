@@ -1,0 +1,109 @@
+"""Web search service — search the internet via multiple providers."""
+
+from typing import Dict, List
+from app.config import get_settings
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class SearchService:
+    def __init__(self):
+        self.settings = get_settings()
+        self.provider = self.settings.SEARCH_PROVIDER
+
+    async def search(self, query: str, max_results: int = 5) -> List[Dict]:
+        if self.provider == "tavily":
+            return await self._tavily(query, max_results)
+        elif self.provider == "serper":
+            return await self._serper(query, max_results)
+        elif self.provider == "duckduckgo":
+            return await self._duckduckgo(query, max_results)
+        else:
+            return await self._tavily(query, max_results)
+
+    async def _tavily(self, query: str, max_results: int) -> List[Dict]:
+        try:
+            from tavily import AsyncTavilyClient
+
+            client = AsyncTavilyClient(api_key=self.settings.TAVILY_API_KEY)
+            response = await client.search(query, max_results=max_results)
+            return [
+                {
+                    "title": r.get("title", ""),
+                    "url": r.get("url", ""),
+                    "snippet": r.get("content", ""),
+                    "score": r.get("score", 0),
+                }
+                for r in response.get("results", [])
+            ]
+        except ImportError:
+            logger.error("tavily-python not installed")
+            raise
+
+    async def _serper(self, query: str, max_results: int) -> List[Dict]:
+        import httpx
+
+        url = "https://google.serper.dev/search"
+        headers = {"X-API-KEY": self.settings.SERPER_API_KEY, "Content-Type": "application/json"}
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(url, json={"q": query, "num": max_results}, headers=headers, timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+        return [
+            {
+                "title": r.get("title", ""),
+                "url": r.get("link", ""),
+                "snippet": r.get("snippet", ""),
+                "score": r.get("position", 0),
+            }
+            for r in data.get("organic", [])
+        ]
+
+    async def _duckduckgo(self, query: str, max_results: int) -> List[Dict]:
+        try:
+            from duckduckgo_search import DDGS
+
+            results = []
+            with DDGS() as ddgs:
+                for r in ddgs.text(query, max_results=max_results):
+                    results.append(
+                        {
+                            "title": r.get("title", ""),
+                            "url": r.get("href", ""),
+                            "snippet": r.get("body", ""),
+                            "score": 0,
+                        }
+                    )
+            return results
+        except ImportError:
+            logger.error("duckduckgo-search not installed")
+            raise
+
+    async def search_and_summarize(self, query: str, max_results: int = 5) -> Dict:
+        """Search the web and use LLM to summarize findings."""
+        results = await self.search(query, max_results)
+        if not results:
+            return {"query": query, "summary": "No results found.", "sources": []}
+
+        from app.core.ai.factory import get_llm_client
+
+        llm = get_llm_client()
+        context = "\n\n".join(
+            f"[{r['title']}]({r['url']})\n{r['snippet']}" for r in results
+        )
+        response = await llm.chat(
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Summarize the search results. Cite sources with [title](url).",
+                },
+                {"role": "user", "content": f"Query: {query}\n\nSearch Results:\n{context}"},
+            ],
+            temperature=0.3,
+        )
+        return {
+            "query": query,
+            "summary": response["content"],
+            "sources": [{"title": r["title"], "url": r["url"]} for r in results],
+        }

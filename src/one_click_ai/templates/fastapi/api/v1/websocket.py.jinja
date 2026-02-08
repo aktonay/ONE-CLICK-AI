@@ -1,0 +1,42 @@
+"""WebSocket endpoint for real-time voice-to-voice / streaming."""
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+import logging
+import json
+
+router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+@router.websocket("/voice")
+async def voice_to_voice_ws(websocket: WebSocket):
+    """
+    Real-time voice-to-voice conversation over WebSocket.
+    Client sends audio chunks → receives audio response chunks.
+    """
+    await websocket.accept()
+    session_id = None
+
+    try:
+        # Initial handshake
+        init_msg = await websocket.receive_json()
+        session_id = init_msg.get("session_id", "default")
+        logger.info("Voice WS session started: %s", session_id)
+
+        await websocket.send_json({"type": "session_started", "session_id": session_id})
+
+        while True:
+            data = await websocket.receive_bytes()
+            # TODO: process audio chunk through STT → LLM → TTS pipeline
+            # For now echo back a placeholder
+            await websocket.send_json({
+                "type": "transcript",
+                "text": "[audio received — processing pipeline not connected yet]",
+                "session_id": session_id,
+            })
+
+    except WebSocketDisconnect:
+        logger.info("Voice WS disconnected: %s", session_id)
+    except Exception as e:
+        logger.error("Voice WS error: %s", e)
+        await websocket.close(code=1011)

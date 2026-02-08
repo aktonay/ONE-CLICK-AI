@@ -1,0 +1,66 @@
+#!/bin/bash
+# ── Docker Helper Script for {{ project_name }} ──────────────────
+
+set -e
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+show_help() {
+    echo "Usage: ./docker-helper.sh [command]"
+    echo ""
+    echo "Commands:"
+    echo "  dev        Start development environment"
+    echo "  prod       Start production environment"
+    echo "  stop       Stop all containers"
+    echo "  restart    Restart all containers"
+    echo "  logs       Show logs (follow)"
+    echo "  build      Build images"
+    echo "  clean      Remove containers, volumes, images"
+    echo "  status     Show container status"
+    echo "  shell      Open shell in app container"
+    echo ""
+}
+
+case "${1}" in
+    dev)
+        echo -e "${GREEN}🚀 Starting development environment...${NC}"
+        docker compose -f docker-compose.dev.yml up --build
+        ;;
+    prod)
+        echo -e "${GREEN}🚀 Starting production environment...${NC}"
+        docker compose -f docker-compose.prod.yml up --build -d
+        ;;
+    stop)
+        echo -e "${YELLOW}⏹ Stopping containers...${NC}"
+        docker compose -f docker-compose.dev.yml down 2>/dev/null || true
+        docker compose -f docker-compose.prod.yml down 2>/dev/null || true
+        ;;
+    restart)
+        echo -e "${YELLOW}🔄 Restarting...${NC}"
+        docker compose -f docker-compose.dev.yml restart
+        ;;
+    logs)
+        docker compose -f docker-compose.dev.yml logs -f
+        ;;
+    build)
+        echo -e "${GREEN}🔨 Building images...${NC}"
+        docker compose -f docker-compose.dev.yml build
+        ;;
+    clean)
+        echo -e "${RED}🧹 Cleaning up everything...${NC}"
+        docker compose -f docker-compose.dev.yml down -v --rmi local 2>/dev/null || true
+        docker compose -f docker-compose.prod.yml down -v --rmi local 2>/dev/null || true
+        ;;
+    status)
+        docker compose -f docker-compose.dev.yml ps
+        ;;
+    shell)
+        docker compose -f docker-compose.dev.yml exec app bash
+        ;;
+    *)
+        show_help
+        ;;
+esac

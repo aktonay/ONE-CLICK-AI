@@ -1,0 +1,73 @@
+{# CV Postprocessing #}
+"""
+Post-processing — NMS, drawing, format conversion.
+"""
+
+import logging
+from typing import Any, Dict, List, Tuple
+import numpy as np
+
+logger = logging.getLogger(__name__)
+
+
+def non_max_suppression(
+    boxes: np.ndarray, scores: np.ndarray, iou_threshold: float = 0.5
+) -> List[int]:
+    """Apply Non-Maximum Suppression to detection boxes."""
+    if len(boxes) == 0:
+        return []
+
+    x1, y1, x2, y2 = boxes[:, 0], boxes[:, 1], boxes[:, 2], boxes[:, 3]
+    areas = (x2 - x1 + 1) * (y2 - y1 + 1)
+    order = scores.argsort()[::-1]
+    keep = []
+
+    while order.size > 0:
+        i = order[0]
+        keep.append(i)
+        xx1 = np.maximum(x1[i], x1[order[1:]])
+        yy1 = np.maximum(y1[i], y1[order[1:]])
+        xx2 = np.minimum(x2[i], x2[order[1:]])
+        yy2 = np.minimum(y2[i], y2[order[1:]])
+        w = np.maximum(0.0, xx2 - xx1 + 1)
+        h = np.maximum(0.0, yy2 - yy1 + 1)
+        inter = w * h
+        iou = inter / (areas[i] + areas[order[1:]] - inter)
+        inds = np.where(iou <= iou_threshold)[0]
+        order = order[inds + 1]
+
+    return keep
+
+
+def draw_detections(
+    image: np.ndarray,
+    detections: List[Dict[str, Any]],
+    output_path: str = None,
+) -> np.ndarray:
+    """Draw bounding boxes on image."""
+    from PIL import Image, ImageDraw, ImageFont
+    img = Image.fromarray(image)
+    draw = ImageDraw.Draw(img)
+
+    for det in detections:
+        box = det["box"]
+        label = det.get("label", "")
+        conf = det.get("confidence", 0)
+        draw.rectangle(box, outline="red", width=2)
+        draw.text((box[0], box[1] - 15), f"{label} {conf:.2f}", fill="red")
+
+    if output_path:
+        img.save(output_path)
+    return np.array(img)
+
+
+def format_detections(raw_results: List[Dict]) -> List[Dict[str, Any]]:
+    """Normalize detection results into a standard format."""
+    formatted = []
+    for r in raw_results:
+        formatted.append({
+            "label": r.get("class", r.get("label", "unknown")),
+            "confidence": float(r.get("confidence", r.get("score", 0))),
+            "box": r.get("box", r.get("bbox", [0, 0, 0, 0])),
+        })
+    return formatted

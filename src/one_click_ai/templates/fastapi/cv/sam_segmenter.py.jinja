@@ -1,0 +1,79 @@
+{# SAM2 Segmenter #}
+"""
+Segment Anything Model 2 (SAM2) — interactive segmentation.
+"""
+
+import logging
+from typing import Any, Dict, List, Optional
+import numpy as np
+
+logger = logging.getLogger(__name__)
+
+
+class SAMSegmenter:
+    """SAM2 segmentation wrapper."""
+
+    def __init__(self, model_type: str = "vit_h", checkpoint: str = "sam2_hiera_large.pt"):
+        self.model_type = model_type
+        self.checkpoint = checkpoint
+        self._predictor = None
+
+    def _load(self):
+        if self._predictor is not None:
+            return
+        try:
+            from segment_anything import sam_model_registry, SamPredictor
+            sam = sam_model_registry[self.model_type](checkpoint=self.checkpoint)
+            self._predictor = SamPredictor(sam)
+            logger.info(f"SAM model loaded: {self.model_type}")
+        except ImportError:
+            logger.warning("segment-anything not installed, using stub")
+
+    def segment(
+        self,
+        image_path: str,
+        points: Optional[List[List[int]]] = None,
+        labels: Optional[List[int]] = None,
+        box: Optional[List[int]] = None,
+    ) -> Dict[str, Any]:
+        """Segment image using point or box prompts."""
+        from PIL import Image
+        self._load()
+
+        image = np.array(Image.open(image_path).convert("RGB"))
+        self._predictor.set_image(image)
+
+        point_coords = np.array(points) if points else None
+        point_labels = np.array(labels) if labels else None
+        box_arr = np.array(box) if box else None
+
+        masks, scores, logits = self._predictor.predict(
+            point_coords=point_coords,
+            point_labels=point_labels,
+            box=box_arr,
+            multimask_output=True,
+        )
+
+        return {
+            "masks_count": int(masks.shape[0]),
+            "scores": scores.tolist(),
+            "mask_shapes": [list(m.shape) for m in masks],
+        }
+
+    def segment_everything(self, image_path: str) -> Dict[str, Any]:
+        """Automatic mask generation (segment everything)."""
+        from PIL import Image
+        self._load()
+        try:
+            from segment_anything import SamAutomaticMaskGenerator
+            from segment_anything import sam_model_registry
+            sam = sam_model_registry[self.model_type](checkpoint=self.checkpoint)
+            generator = SamAutomaticMaskGenerator(sam)
+            image = np.array(Image.open(image_path).convert("RGB"))
+            masks = generator.generate(image)
+            return {
+                "masks_count": len(masks),
+                "areas": [m["area"] for m in masks[:20]],
+            }
+        except ImportError:
+            return {"error": "segment-anything not installed"}

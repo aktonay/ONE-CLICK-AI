@@ -1,0 +1,68 @@
+---
+- name: Configure {{ project_name }} server
+  hosts: servers
+  become: true
+
+  vars:
+    project_name: "{{ project_name }}"
+    app_dir: "/opt/{{ '{{ project_name }}' }}"
+    {% if context.get("github_url") %}
+    repo_url: "{{ context.github_url }}"
+    {% else %}
+    repo_url: "https://github.com/{{ context.get('github_username', 'user') }}/{{ project_name }}.git"
+    {% endif %}
+
+  tasks:
+    - name: Update system packages
+      apt:
+        update_cache: yes
+        upgrade: dist
+
+    - name: Install required packages
+      apt:
+        name:
+          - docker.io
+          - docker-compose-plugin
+          - git
+          - curl
+          - ufw
+        state: present
+
+    - name: Start Docker
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Configure firewall
+      ufw:
+        rule: allow
+        port: "{{ '{{ item }}' }}"
+        proto: tcp
+      loop:
+        - "22"
+        - "80"
+        - "443"
+        - "8000"
+
+    - name: Enable firewall
+      ufw:
+        state: enabled
+
+    - name: Clone repository
+      git:
+        repo: "{{ '{{ repo_url }}' }}"
+        dest: "{{ '{{ app_dir }}' }}"
+        version: main
+        force: yes
+
+    - name: Copy .env file
+      template:
+        src: .env.j2
+        dest: "{{ '{{ app_dir }}' }}/.env"
+        mode: "0600"
+
+    - name: Start application
+      shell: |
+        cd {{ '{{ app_dir }}' }}
+        docker compose -f docker-compose.prod.yml up -d --build

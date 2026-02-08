@@ -1,0 +1,22 @@
+"""Vision service — image and video analysis."""
+
+from typing import Dict
+from app.core.multimodal.vision import VisionClient
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class VisionService:
+    def __init__(self):
+        self.client = VisionClient()
+
+    async def analyze_image(
+        self, image_bytes: bytes, prompt: str, content_type: str = "image/jpeg"
+    ) -> Dict:
+        return await self.client.analyze_image(image_bytes, prompt, content_type)
+
+    async def analyze_video_frames(
+        self, frames: list[bytes], prompt: str, content_type: str = "image/jpeg"
+    ) -> Dict:
+        return await self.client.analyze_video_frames(frames, prompt, content_type)

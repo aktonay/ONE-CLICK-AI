@@ -1,0 +1,72 @@
+{# ML Configuration #}
+"""
+ML training configuration — hyperparameters, paths, experiment settings.
+"""
+
+from pydantic import BaseModel, Field
+from typing import Optional, List, Dict, Any
+from enum import Enum
+
+
+class MLFramework(str, Enum):
+    PYTORCH = "pytorch"
+    TENSORFLOW = "tensorflow"
+    SKLEARN = "sklearn"
+    XGBOOST = "xgboost"
+    LIGHTGBM = "lightgbm"
+
+
+class TaskType(str, Enum):
+    CLASSIFICATION = "classification"
+    REGRESSION = "regression"
+    OBJECT_DETECTION = "object_detection"
+    SEGMENTATION = "segmentation"
+    NLP = "nlp"
+    TIME_SERIES = "time_series"
+    CLUSTERING = "clustering"
+    RECOMMENDATION = "recommendation"
+
+
+class TrainingConfig(BaseModel):
+    """Training configuration."""
+    experiment_name: str = "default"
+    framework: MLFramework = MLFramework.PYTORCH
+    task_type: TaskType = TaskType.CLASSIFICATION
+
+    # Data
+    data_path: str = "datasets/raw"
+    output_path: str = "models/checkpoints"
+    test_split: float = 0.2
+    val_split: float = 0.1
+    random_seed: int = 42
+
+    # Training hyperparameters
+    epochs: int = 100
+    batch_size: int = 32
+    learning_rate: float = 1e-3
+    weight_decay: float = 1e-5
+    early_stopping_patience: int = 10
+
+    # GPU
+    use_gpu: bool = {{ 'True' if gpu else 'False' }}
+    gpu_device: str = "cuda:0"
+    mixed_precision: bool = {{ 'True' if gpu else 'False' }}
+
+    # MLOps
+{% if mlops %}
+    mlflow_tracking_uri: str = "http://localhost:5000"
+    wandb_project: str = "{{ project_name }}"
+    log_every_n_steps: int = 10
+{% endif %}
+
+    # Model
+    model_name: str = "default_model"
+    model_params: Dict[str, Any] = Field(default_factory=dict)
+
+
+class PredictionConfig(BaseModel):
+    """Prediction/inference configuration."""
+    model_path: str = "models/exported/best_model"
+    batch_size: int = 64
+    use_gpu: bool = {{ 'True' if gpu else 'False' }}
+    confidence_threshold: float = 0.5

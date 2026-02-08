@@ -1,0 +1,79 @@
+.PHONY: help dev prod test lint format clean docker-dev docker-prod deploy push
+
+help: ## Show this help
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+
+# ── Development ────────────────────────────────────────────────────
+dev: ## Start development server
+	cd backend && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+install: ## Install dependencies
+	cd backend && uv sync
+
+test: ## Run tests
+	cd backend && uv run pytest tests/ -v
+
+lint: ## Run linter
+	cd backend && uv run ruff check .
+
+format: ## Format code
+	cd backend && uv run ruff format .
+
+typecheck: ## Run type checker
+	cd backend && uv run mypy app/ --ignore-missing-imports
+
+# ── Docker ─────────────────────────────────────────────────────────
+docker-dev: ## Start with Docker (development)
+	docker compose -f docker-compose.dev.yml up --build
+
+docker-prod: ## Start with Docker (production)
+	docker compose -f docker-compose.prod.yml up --build -d
+
+docker-stop: ## Stop all containers
+	docker compose -f docker-compose.dev.yml down
+	docker compose -f docker-compose.prod.yml down
+
+docker-logs: ## Show Docker logs
+	docker compose -f docker-compose.dev.yml logs -f
+
+# ── Deploy (ONE COMMAND!) ──────────────────────────────────────────
+deploy: ## 🚀 Full deploy wizard (git push → build → deploy)
+	@bash deploy.sh deploy
+
+push: ## Git add, commit, push
+	@bash deploy.sh push
+
+deploy-aws: ## Deploy to AWS (ECS/EC2/App Runner)
+	@bash deploy.sh aws
+
+deploy-azure: ## Deploy to Azure Container Apps
+	@bash deploy.sh azure
+
+deploy-do: ## Deploy to DigitalOcean
+	@bash deploy.sh do
+
+deploy-gcp: ## Deploy to GCP Cloud Run
+	@bash deploy.sh gcp
+
+deploy-railway: ## Deploy to Railway (easiest)
+	@bash deploy.sh railway
+
+deploy-fly: ## Deploy to Fly.io
+	@bash deploy.sh fly
+
+deploy-render: ## Deploy to Render.com
+	@bash deploy.sh render
+
+deploy-server: ## Deploy to self-hosted server
+	@bash deploy.sh server
+
+# ── Utilities ──────────────────────────────────────────────────────
+clean: ## Clean cache files
+	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+	rm -rf .pytest_cache .mypy_cache .ruff_cache htmlcov .coverage
+
+health: ## Check service health
+	python scripts/health_check.py
+
+status: ## Check deployment status
+	@bash deploy.sh status

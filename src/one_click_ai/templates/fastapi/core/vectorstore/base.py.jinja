@@ -1,0 +1,49 @@
+"""Abstract base for vector store implementations."""
+
+from abc import ABC, abstractmethod
+from typing import Dict, List, Optional
+from dataclasses import dataclass
+
+
+@dataclass
+class VectorRecord:
+    id: str
+    text: str
+    embedding: List[float]
+    metadata: Dict | None = None
+    score: float | None = None
+
+
+class BaseVectorStore(ABC):
+    """Common interface for all vector store backends."""
+
+    @abstractmethod
+    async def initialize(self) -> None:
+        """Create collection / index if not exists."""
+        ...
+
+    @abstractmethod
+    async def add(self, records: List[VectorRecord]) -> int:
+        """Insert records. Return count inserted."""
+        ...
+
+    @abstractmethod
+    async def search(
+        self, query_embedding: List[float], top_k: int = 5, filters: Optional[Dict] = None
+    ) -> List[VectorRecord]:
+        """Return top-k similar records."""
+        ...
+
+    @abstractmethod
+    async def delete(self, ids: List[str]) -> int:
+        """Delete by IDs. Return count deleted."""
+        ...
+
+    @abstractmethod
+    async def count(self) -> int:
+        """Total records in the collection."""
+        ...
+
+    async def close(self) -> None:
+        """Cleanup connections."""
+        pass

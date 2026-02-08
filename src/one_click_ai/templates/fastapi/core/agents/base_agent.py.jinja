@@ -1,0 +1,30 @@
+"""Base agent abstraction — ReAct pattern with tool use."""
+
+from abc import ABC, abstractmethod
+from typing import Dict, List, Optional
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class BaseAgent(ABC):
+    """Abstract agent that can reason and act with tools."""
+
+    def __init__(self, name: str, description: str = ""):
+        self.name = name
+        self.description = description
+        self.tools: List[Dict] = []
+
+    def register_tool(self, tool_definition: Dict) -> None:
+        """Register a tool the agent can use."""
+        self.tools.append(tool_definition)
+
+    @abstractmethod
+    async def run(self, message: str, context: Optional[Dict] = None) -> Dict:
+        """Execute the agent with a user message."""
+        ...
+
+    @abstractmethod
+    async def execute_tool(self, name: str, args: Dict) -> str:
+        """Execute a single tool call and return the result as a string."""
+        ...

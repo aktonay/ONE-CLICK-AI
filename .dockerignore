@@ -1,0 +1,42 @@
+# Git
+.git/
+.github/
+.gitignore
+
+# Python
+__pycache__/
+*.py[codz]
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Docs
+*.md
+LICENSE
+HELPER.md
+CONTRIBUTING.md
+docs/
+
+# Tests
+tests/
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Misc
+.ruff_cache/
+.mypy_cache/

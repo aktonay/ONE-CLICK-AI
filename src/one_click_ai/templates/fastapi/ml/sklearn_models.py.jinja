@@ -1,0 +1,117 @@
+{# sklearn Models #}
+"""
+Pre-built scikit-learn model pipelines — classification & regression.
+"""
+
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import GridSearchCV
+from typing import Dict, Any
+
+
+def create_random_forest_classifier(**kwargs):
+    from sklearn.ensemble import RandomForestClassifier
+    return Pipeline([
+        ("scaler", StandardScaler()),
+        ("model", RandomForestClassifier(n_estimators=100, random_state=42, **kwargs)),
+    ])
+
+
+def create_gradient_boosting_classifier(**kwargs):
+    from sklearn.ensemble import GradientBoostingClassifier
+    return Pipeline([
+        ("scaler", StandardScaler()),
+        ("model", GradientBoostingClassifier(n_estimators=100, random_state=42, **kwargs)),
+    ])
+
+
+def create_svm_classifier(**kwargs):
+    from sklearn.svm import SVC
+    return Pipeline([
+        ("scaler", StandardScaler()),
+        ("model", SVC(kernel="rbf", probability=True, **kwargs)),
+    ])
+
+
+def create_logistic_regression(**kwargs):
+    from sklearn.linear_model import LogisticRegression
+    return Pipeline([
+        ("scaler", StandardScaler()),
+        ("model", LogisticRegression(max_iter=1000, random_state=42, **kwargs)),
+    ])
+
+
+def create_knn_classifier(n_neighbors: int = 5, **kwargs):
+    from sklearn.neighbors import KNeighborsClassifier
+    return Pipeline([
+        ("scaler", StandardScaler()),
+        ("model", KNeighborsClassifier(n_neighbors=n_neighbors, **kwargs)),
+    ])
+
+
+def create_linear_regression(**kwargs):
+    from sklearn.linear_model import LinearRegression
+    return Pipeline([
+        ("scaler", StandardScaler()),
+        ("model", LinearRegression(**kwargs)),
+    ])
+
+
+def create_ridge_regression(alpha: float = 1.0, **kwargs):
+    from sklearn.linear_model import Ridge
+    return Pipeline([
+        ("scaler", StandardScaler()),
+        ("model", Ridge(alpha=alpha, **kwargs)),
+    ])
+
+
+def create_lasso_regression(alpha: float = 1.0, **kwargs):
+    from sklearn.linear_model import Lasso
+    return Pipeline([
+        ("scaler", StandardScaler()),
+        ("model", Lasso(alpha=alpha, **kwargs)),
+    ])
+
+
+def create_random_forest_regressor(**kwargs):
+    from sklearn.ensemble import RandomForestRegressor
+    return Pipeline([
+        ("scaler", StandardScaler()),
+        ("model", RandomForestRegressor(n_estimators=100, random_state=42, **kwargs)),
+    ])
+
+
+def auto_select_best_model(X_train, y_train, task: str = "classification") -> Dict[str, Any]:
+    """Automatically try multiple models and return the best one."""
+    from sklearn.model_selection import cross_val_score
+    import numpy as np
+
+    if task == "classification":
+        models = {
+            "RandomForest": create_random_forest_classifier(),
+            "GradientBoosting": create_gradient_boosting_classifier(),
+            "LogisticRegression": create_logistic_regression(),
+            "SVM": create_svm_classifier(),
+            "KNN": create_knn_classifier(),
+        }
+        scoring = "accuracy"
+    else:
+        models = {
+            "RandomForest": create_random_forest_regressor(),
+            "LinearRegression": create_linear_regression(),
+            "Ridge": create_ridge_regression(),
+            "Lasso": create_lasso_regression(),
+        }
+        scoring = "r2"
+
+    results = {}
+    for name, model in models.items():
+        scores = cross_val_score(model, X_train, y_train, cv=5, scoring=scoring)
+        results[name] = {"mean": float(np.mean(scores)), "std": float(np.std(scores)), "model": model}
+
+    best_name = max(results, key=lambda k: results[k]["mean"])
+    best = results[best_name]
+    best["model"].fit(X_train, y_train)
+    return {"name": best_name, "model": best["model"], "score": best["mean"], "all_results": {
+        k: {"mean": v["mean"], "std": v["std"]} for k, v in results.items()
+    }}

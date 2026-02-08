@@ -1,0 +1,165 @@
+# {{ project_name }} — Development Guide
+
+## 🚀 Quick Start
+
+```bash
+# 1. Install dependencies
+uv sync
+
+# 2. Configure environment
+cp .env.example .env
+# Edit .env with your API keys
+
+# 3. Start development server
+make dev
+# or: uvicorn app.main:app --reload
+```
+
+## 📁 Project Structure
+
+```
+{{ project_name }}/
+├── app/
+│   ├── main.py              # FastAPI application entry point
+│   ├── config.py             # Pydantic Settings configuration
+│   ├── dependencies.py       # Dependency injection
+│   ├── exceptions.py         # Custom exception handlers
+│   ├── api/
+│   │   ├── v1/               # API v1 routes
+│   │   │   ├── health.py     # Health check endpoint
+{% if context.get("llm", False) %}
+│   │   │   ├── chat.py       # Chat/LLM endpoints
+{% endif %}
+{% if context.get("rag", False) %}
+│   │   │   ├── rag.py        # RAG query endpoints
+│   │   │   ├── documents.py  # Document upload/management
+{% endif %}
+{% if context.get("voice", False) %}
+│   │   │   ├── voice.py      # STT/TTS endpoints
+{% endif %}
+{% if context.get("vision", False) %}
+│   │   │   ├── vision.py     # Image analysis endpoints
+{% endif %}
+{% if context.get("search", False) %}
+│   │   │   ├── search.py     # Web search endpoints
+{% endif %}
+{% if context.get("agents", False) %}
+│   │   │   ├── agents.py     # AI agent endpoints
+{% endif %}
+│   │   └── middleware/        # Request middleware
+│   ├── core/                  # Core business logic
+│   │   ├── ai/               # LLM clients & providers
+│   │   │   ├── llm_client.py # Abstract LLM interface
+│   │   │   ├── factory.py    # Provider factory
+│   │   │   └── providers/    # OpenAI, Anthropic, Google, etc.
+{% if context.get("rag", False) %}
+│   │   ├── rag/              # RAG pipeline
+│   │   │   ├── pipeline.py   # Ingest → Query flow
+│   │   │   ├── chunking.py   # Document chunking strategies
+│   │   │   └── retriever.py  # Vector similarity search
+│   │   ├── vectorstore/      # Vector store backends
+{% endif %}
+{% if context.get("voice", False) %}
+│   │   ├── multimodal/       # STT, TTS, Vision, Emotion
+{% endif %}
+{% if context.get("memory", False) %}
+│   │   └── memory/           # Short-term & long-term memory
+{% endif %}
+│   ├── services/             # Service layer
+│   ├── models/               # Pydantic schemas
+│   ├── db/                   # Database connections
+│   └── utils/                # Logging, security, helpers
+├── tests/                    # Test suite
+{% if context.get("docker", False) %}
+├── Dockerfile                # Production container
+├── docker-compose.dev.yml    # Development stack
+├── docker-compose.prod.yml   # Production stack
+{% endif %}
+{% if context.get("monitoring", False) %}
+├── monitoring/               # Prometheus, Grafana configs
+{% endif %}
+{% if context.get("iac", False) %}
+├── iac/                      # Infrastructure as Code
+│   ├── terraform/            # AWS provisioning
+│   └── ansible/              # Server configuration
+{% endif %}
+├── .env.example              # Environment template
+├── pyproject.toml            # Project config & dependencies
+└── Makefile                  # Common commands
+```
+
+## 🔧 Configuration
+
+All settings are managed via environment variables. See `.env.example` for all options.
+
+Key settings:
+- `LLM_PROVIDER` — Which AI provider to use (openai, anthropic, google, groq, etc.)
+- `LLM_MODEL` — Model name (gpt-4o, claude-sonnet-4-20250514, gemini-2.0-flash, etc.)
+{% if context.get("rag", False) %}
+- `VECTOR_STORE` — Vector database backend (faiss, pinecone, qdrant, etc.)
+- `EMBEDDING_MODEL` — Embedding model for RAG
+{% endif %}
+
+## 🧪 Testing
+
+```bash
+# Run all tests
+make test
+
+# Run specific test
+uv run pytest tests/test_health.py -v
+
+# With coverage
+uv run pytest tests/ --cov=app --cov-report=html
+```
+
+## 📡 API Endpoints
+
+Once running, visit:
+- **Swagger UI**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+- **Health**: http://localhost:8000/api/v1/health
+
+{% if context.get("docker", False) %}
+## 🐳 Docker
+
+```bash
+# Development (with hot reload)
+make docker-dev
+
+# Production
+make docker-prod
+
+# Helper script
+chmod +x docker-helper.sh
+./docker-helper.sh dev
+```
+{% endif %}
+
+{% if context.get("iac", False) %}
+## 🏗️ Infrastructure
+
+### Terraform (AWS)
+```bash
+cd iac/terraform
+terraform init
+terraform plan
+terraform apply
+```
+
+### Ansible (Server Setup)
+```bash
+cd iac/ansible
+ansible-playbook -i hosts.ini playbook.yml
+```
+{% endif %}
+
+## 📦 Adding Dependencies
+
+```bash
+# Add a package
+uv add package-name
+
+# Add dev dependency
+uv add --dev package-name
+```

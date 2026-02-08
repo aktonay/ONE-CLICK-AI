@@ -1,0 +1,55 @@
+"""AI agent endpoints."""
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
+from typing import Optional, List, Dict
+
+router = APIRouter()
+
+
+class AgentRequest(BaseModel):
+    task: str = Field(..., min_length=1)
+    tools: Optional[List[str]] = None
+    max_iterations: int = Field(default=10, ge=1, le=50)
+{% if session %}
+    session_id: Optional[str] = None
+{% endif %}
+
+
+class AgentStep(BaseModel):
+    thought: str
+    action: str
+    observation: str
+
+
+class AgentResponse(BaseModel):
+    result: str
+    steps: List[AgentStep] = []
+    tools_used: List[str] = []
+
+
+@router.post("/run", response_model=AgentResponse)
+async def run_agent(request: AgentRequest):
+    """
+    Execute an AI agent that can use tools (web search, calculator, code execution, etc.).
+    """
+    from app.services.agent_service import AgentService
+
+    try:
+        service = AgentService()
+        result = await service.run(
+            task=request.task,
+            tools=request.tools,
+            max_iterations=request.max_iterations,
+        )
+        return AgentResponse(**result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/tools")
+async def list_tools():
+    """List available tools the agent can use."""
+    from app.core.agents.tools import AVAILABLE_TOOLS
+
+    return {"tools": list(AVAILABLE_TOOLS.keys())}

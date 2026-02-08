@@ -1,0 +1,46 @@
+{
+  "dashboard": {
+    "title": "{{ project_name }} Dashboard",
+    "panels": [
+      {
+        "title": "Request Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total{job=\"{{ project_name }}\"}[5m])",
+            "legendFormat": "{% raw %}{{method}} {{path}}{% endraw %}"
+          }
+        ]
+      },
+      {
+        "title": "Response Time (p95)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=\"{{ project_name }}\"}[5m]))",
+            "legendFormat": "p95"
+          }
+        ]
+      },
+      {
+        "title": "Error Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total{job=\"{{ project_name }}\", status=~\"5..\"}[5m])",
+            "legendFormat": "5xx errors"
+          }
+        ]
+      },
+      {
+        "title": "Active Connections",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "http_active_connections{job=\"{{ project_name }}\"}"
+          }
+        ]
+      }
+    ]
+  }
+}

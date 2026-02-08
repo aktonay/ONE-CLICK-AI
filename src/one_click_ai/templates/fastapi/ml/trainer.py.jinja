@@ -1,0 +1,247 @@
+{# ML Trainer #}
+"""
+Unified ML trainer — supports PyTorch, TensorFlow, scikit-learn, XGBoost, LightGBM.
+"""
+
+import logging
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple
+from app.ml.config import TrainingConfig, MLFramework
+
+logger = logging.getLogger(__name__)
+
+
+class BaseTrainer:
+    """Base trainer interface."""
+
+    def __init__(self, config: TrainingConfig):
+        self.config = config
+        self.model = None
+        self.history: Dict[str, list] = {"train_loss": [], "val_loss": [], "metrics": []}
+
+    def train(self, X_train, y_train, X_val=None, y_val=None) -> Dict[str, Any]:
+        raise NotImplementedError
+
+    def evaluate(self, X_test, y_test) -> Dict[str, float]:
+        raise NotImplementedError
+
+    def save(self, path: str):
+        raise NotImplementedError
+
+    def load(self, path: str):
+        raise NotImplementedError
+
+
+{% if pytorch %}
+class PyTorchTrainer(BaseTrainer):
+    """PyTorch training loop with mixed precision, early stopping, checkpointing."""
+
+    def __init__(self, config: TrainingConfig, model=None):
+        super().__init__(config)
+        import torch
+        self.device = torch.device(config.gpu_device if config.use_gpu and torch.cuda.is_available() else "cpu")
+        self.model = model
+        logger.info(f"PyTorch trainer initialized on {self.device}")
+
+    def train(self, train_loader, val_loader=None) -> Dict[str, Any]:
+        import torch
+        import torch.nn as nn
+
+        self.model = self.model.to(self.device)
+        optimizer = torch.optim.AdamW(
+            self.model.parameters(),
+            lr=self.config.learning_rate,
+            weight_decay=self.config.weight_decay,
+        )
+        criterion = nn.CrossEntropyLoss()
+        scaler = torch.amp.GradScaler(enabled=self.config.mixed_precision)
+        best_val_loss = float("inf")
+        patience_counter = 0
+
+        for epoch in range(self.config.epochs):
+            # ── Training ──
+            self.model.train()
+            total_loss = 0.0
+            for batch_idx, (data, target) in enumerate(train_loader):
+                data, target = data.to(self.device), target.to(self.device)
+                optimizer.zero_grad()
+                with torch.amp.autocast(device_type="cuda", enabled=self.config.mixed_precision):
+                    output = self.model(data)
+                    loss = criterion(output, target)
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+                total_loss += loss.item()
+
+            avg_train_loss = total_loss / len(train_loader)
+            self.history["train_loss"].append(avg_train_loss)
+
+            # ── Validation ──
+            if val_loader:
+                val_loss = self._validate(val_loader, criterion)
+                self.history["val_loss"].append(val_loss)
+
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    patience_counter = 0
+                    self.save(f"{self.config.output_path}/best_model.pt")
+                else:
+                    patience_counter += 1
+
+                if patience_counter >= self.config.early_stopping_patience:
+                    logger.info(f"Early stopping at epoch {epoch + 1}")
+                    break
+
+            logger.info(f"Epoch {epoch + 1}/{self.config.epochs} — train_loss: {avg_train_loss:.4f}")
+
+        return {"history": self.history, "best_val_loss": best_val_loss}
+
+    def _validate(self, val_loader, criterion) -> float:
+        import torch
+        self.model.eval()
+        total_loss = 0.0
+        with torch.no_grad():
+            for data, target in val_loader:
+                data, target = data.to(self.device), target.to(self.device)
+                output = self.model(data)
+                total_loss += criterion(output, target).item()
+        return total_loss / len(val_loader)
+
+    def evaluate(self, test_loader) -> Dict[str, float]:
+        import torch
+        self.model.eval()
+        correct = 0
+        total = 0
+        with torch.no_grad():
+            for data, target in test_loader:
+                data, target = data.to(self.device), target.to(self.device)
+                output = self.model(data)
+                _, predicted = torch.max(output, 1)
+                total += target.size(0)
+                correct += (predicted == target).sum().item()
+        accuracy = correct / total
+        return {"accuracy": accuracy, "total_samples": total}
+
+    def save(self, path: str):
+        import torch
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        torch.save(self.model.state_dict(), path)
+        logger.info(f"Model saved to {path}")
+
+    def load(self, path: str):
+        import torch
+        self.model.load_state_dict(torch.load(path, map_location=self.device))
+        self.model.to(self.device)
+        logger.info(f"Model loaded from {path}")
+{% endif %}
+
+
+{% if sklearn %}
+class SklearnTrainer(BaseTrainer):
+    """scikit-learn trainer — classification, regression, clustering."""
+
+    def train(self, X_train, y_train, X_val=None, y_val=None) -> Dict[str, Any]:
+        from sklearn.model_selection import cross_val_score
+        import numpy as np
+
+        cv_scores = cross_val_score(self.model, X_train, y_train, cv=5, scoring="accuracy")
+        self.model.fit(X_train, y_train)
+
+        result = {
+            "cv_mean": float(np.mean(cv_scores)),
+            "cv_std": float(np.std(cv_scores)),
+        }
+        if X_val is not None and y_val is not None:
+            val_score = self.model.score(X_val, y_val)
+            result["val_score"] = float(val_score)
+
+        logger.info(f"sklearn training complete — CV: {result['cv_mean']:.4f} ± {result['cv_std']:.4f}")
+        return result
+
+    def evaluate(self, X_test, y_test) -> Dict[str, float]:
+        from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+        predictions = self.model.predict(X_test)
+        return {
+            "accuracy": float(accuracy_score(y_test, predictions)),
+            "precision": float(precision_score(y_test, predictions, average="weighted", zero_division=0)),
+            "recall": float(recall_score(y_test, predictions, average="weighted", zero_division=0)),
+            "f1": float(f1_score(y_test, predictions, average="weighted", zero_division=0)),
+        }
+
+    def save(self, path: str):
+        import joblib
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        joblib.dump(self.model, path)
+
+    def load(self, path: str):
+        import joblib
+        self.model = joblib.load(path)
+{% endif %}
+
+
+{% if xgboost %}
+class XGBoostTrainer(BaseTrainer):
+    """XGBoost gradient boosting trainer."""
+
+    def train(self, X_train, y_train, X_val=None, y_val=None) -> Dict[str, Any]:
+        import xgboost as xgb
+
+        dtrain = xgb.DMatrix(X_train, label=y_train)
+        params = {
+            "objective": "multi:softmax" if self.config.task_type.value == "classification" else "reg:squarederror",
+            "learning_rate": self.config.learning_rate,
+            "max_depth": self.config.model_params.get("max_depth", 6),
+            "n_estimators": self.config.model_params.get("n_estimators", 100),
+            "tree_method": "hist",
+            "device": "cuda" if self.config.use_gpu else "cpu",
+        }
+
+        evals = [(dtrain, "train")]
+        if X_val is not None:
+            dval = xgb.DMatrix(X_val, label=y_val)
+            evals.append((dval, "val"))
+
+        self.model = xgb.train(
+            params, dtrain,
+            num_boost_round=self.config.epochs,
+            evals=evals,
+            early_stopping_rounds=self.config.early_stopping_patience,
+            verbose_eval=False,
+        )
+        return {"best_iteration": self.model.best_iteration}
+
+    def evaluate(self, X_test, y_test) -> Dict[str, float]:
+        import xgboost as xgb
+        from sklearn.metrics import accuracy_score
+        dtest = xgb.DMatrix(X_test)
+        preds = self.model.predict(dtest)
+        return {"accuracy": float(accuracy_score(y_test, preds))}
+
+    def save(self, path: str):
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        self.model.save_model(path)
+
+    def load(self, path: str):
+        import xgboost as xgb
+        self.model = xgb.Booster()
+        self.model.load_model(path)
+{% endif %}
+
+
+def create_trainer(config: TrainingConfig, model=None) -> BaseTrainer:
+    """Factory to create the right trainer based on config."""
+{% if pytorch %}
+    if config.framework == MLFramework.PYTORCH:
+        return PyTorchTrainer(config, model=model)
+{% endif %}
+{% if sklearn %}
+    if config.framework == MLFramework.SKLEARN:
+        trainer = SklearnTrainer(config)
+        trainer.model = model
+        return trainer
+{% endif %}
+{% if xgboost %}
+    if config.framework == MLFramework.XGBOOST:
+        return XGBoostTrainer(config)
+{% endif %}
+    raise ValueError(f"Unsupported framework: {config.framework}")

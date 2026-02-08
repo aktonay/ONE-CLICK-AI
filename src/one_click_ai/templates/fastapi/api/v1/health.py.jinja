@@ -1,0 +1,23 @@
+"""Health-check endpoints."""
+
+from fastapi import APIRouter
+from datetime import datetime, timezone
+
+router = APIRouter()
+
+
+@router.get("/")
+async def health():
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "service": "{{ project_name }}",
+        "version": "{{ project_version }}",
+    }
+
+
+@router.get("/ready")
+async def readiness():
+    """Kubernetes-style readiness probe."""
+    # TODO: check DB / vector-store connectivity
+    return {"ready": True}

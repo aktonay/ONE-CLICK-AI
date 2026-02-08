@@ -1,0 +1,145 @@
+"""Agent service — AI agent execution with tool use."""
+
+from typing import Dict, List, Optional
+from app.core.ai.factory import get_llm_client
+{% if context.get("search", False) %}
+from app.services.search_service import SearchService
+{% endif %}
+{% if context.get("rag", False) %}
+from app.services.rag_service import RAGService
+{% endif %}
+import json
+import logging
+
+logger = logging.getLogger(__name__)
+
+# ── Built-in tools ──────────────────────────────────────────────────
+AVAILABLE_TOOLS = []
+
+{% if context.get("search", False) %}
+AVAILABLE_TOOLS.append(
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Search the internet for current information",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "The search query"},
+                },
+                "required": ["query"],
+            },
+        },
+    }
+)
+{% endif %}
+
+{% if context.get("rag", False) %}
+AVAILABLE_TOOLS.append(
+    {
+        "type": "function",
+        "function": {
+            "name": "knowledge_base",
+            "description": "Search the internal knowledge base / documents",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "question": {"type": "string", "description": "The question to answer from documents"},
+                },
+                "required": ["question"],
+            },
+        },
+    }
+)
+{% endif %}
+
+
+class AgentService:
+    """ReAct-style agent that can call tools and reason about results."""
+
+    def __init__(self):
+        self.llm = get_llm_client()
+        {% if context.get("search", False) %}
+        self.search_service = SearchService()
+        {% endif %}
+        {% if context.get("rag", False) %}
+        self.rag_service = RAGService()
+        {% endif %}
+
+    async def run(
+        self,
+        message: str,
+        system_prompt: Optional[str] = None,
+        max_iterations: int = 5,
+    ) -> Dict:
+        sys_prompt = system_prompt or (
+            "You are a helpful AI agent. Use the available tools when needed. "
+            "Think step by step. After gathering information, provide a final answer."
+        )
+
+        messages = [
+            {"role": "system", "content": sys_prompt},
+            {"role": "user", "content": message},
+        ]
+
+        tool_calls_log: List[Dict] = []
+
+        for iteration in range(max_iterations):
+            result = await self.llm.chat(
+                messages=messages,
+                tools=AVAILABLE_TOOLS if AVAILABLE_TOOLS else None,
+                temperature=0.2,
+            )
+
+            # If the model didn't request a tool call, we're done
+            if not result.get("tool_calls"):
+                return {
+                    "answer": result["content"],
+                    "tool_calls": tool_calls_log,
+                    "iterations": iteration + 1,
+                }
+
+            # Process each tool call
+            for tc in result["tool_calls"]:
+                fn_name = tc["function"]["name"]
+                fn_args = json.loads(tc["function"]["arguments"])
+                logger.info("Agent calling tool: %s(%s)", fn_name, fn_args)
+
+                tool_result = await self._execute_tool(fn_name, fn_args)
+                tool_calls_log.append(
+                    {"tool": fn_name, "args": fn_args, "result": tool_result[:500]}
+                )
+
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "content": tool_result,
+                    }
+                )
+
+        # Fell through max iterations
+        final = await self.llm.chat(messages=messages, temperature=0.3)
+        return {
+            "answer": final["content"],
+            "tool_calls": tool_calls_log,
+            "iterations": max_iterations,
+        }
+
+    async def _execute_tool(self, name: str, args: Dict) -> str:
+        try:
+            {% if context.get("search", False) %}
+            if name == "web_search":
+                results = await self.search_service.search(args["query"])
+                return json.dumps(results, default=str)
+            {% endif %}
+            {% if context.get("rag", False) %}
+            if name == "knowledge_base":
+                result = await self.rag_service.query(args["question"])
+                return json.dumps(result, default=str)
+            {% endif %}
+            return json.dumps({"error": f"Unknown tool: {name}"})
+        except Exception as e:
+            logger.error("Tool execution error: %s", e)
+            return json.dumps({"error": str(e)})

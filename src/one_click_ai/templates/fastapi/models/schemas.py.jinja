@@ -1,0 +1,154 @@
+"""Pydantic schemas for API request/response models."""
+
+from pydantic import BaseModel, Field
+from typing import Dict, List, Optional
+from enum import Enum
+
+
+# ── Enums ──────────────────────────────────────────────────────────
+class MessageRole(str, Enum):
+    system = "system"
+    user = "user"
+    assistant = "assistant"
+
+
+# ── Chat ───────────────────────────────────────────────────────────
+class ChatMessage(BaseModel):
+    role: MessageRole
+    content: str
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(..., min_length=1)
+    system_prompt: Optional[str] = "You are a helpful AI assistant."
+    session_id: Optional[str] = None
+    temperature: float = Field(default=0.7, ge=0, le=2)
+    max_tokens: int = Field(default=2048, ge=1, le=128000)
+    stream: bool = False
+
+
+class ChatResponse(BaseModel):
+    content: str
+    model: Optional[str] = None
+    usage: Optional[Dict] = None
+
+
+{% if context.get("rag", False) %}
+# ── RAG ────────────────────────────────────────────────────────────
+class RAGQueryRequest(BaseModel):
+    question: str = Field(..., min_length=1)
+    top_k: int = Field(default=5, ge=1, le=50)
+    session_id: Optional[str] = None
+
+
+class RAGQueryResponse(BaseModel):
+    answer: str
+    sources: List[Dict] = []
+    model: Optional[str] = None
+
+
+class DocumentUploadResponse(BaseModel):
+    filename: str
+    chunks: int
+    status: str = "ingested"
+{% endif %}
+
+{% if context.get("voice", False) %}
+# ── Voice ──────────────────────────────────────────────────────────
+class TranscriptionResponse(BaseModel):
+    text: str
+    language: Optional[str] = None
+
+
+class TTSRequest(BaseModel):
+    text: str = Field(..., min_length=1)
+    voice_id: Optional[str] = None
+{% endif %}
+
+{% if context.get("vision", False) %}
+# ── Vision ─────────────────────────────────────────────────────────
+class VisionRequest(BaseModel):
+    prompt: str = Field(default="Describe this image in detail.")
+
+
+class VisionResponse(BaseModel):
+    description: str
+    model: Optional[str] = None
+{% endif %}
+
+{% if context.get("emotion", False) %}
+# ── Emotion ────────────────────────────────────────────────────────
+class EmotionTextRequest(BaseModel):
+    text: str = Field(..., min_length=1)
+
+
+class EmotionResponse(BaseModel):
+    primary_emotion: str
+    confidence: float
+    all_emotions: Dict[str, float] = {}
+{% endif %}
+
+{% if context.get("search", False) %}
+# ── Search ─────────────────────────────────────────────────────────
+class SearchRequest(BaseModel):
+    query: str = Field(..., min_length=1)
+    max_results: int = Field(default=5, ge=1, le=20)
+    summarize: bool = False
+
+
+class SearchResult(BaseModel):
+    title: str
+    url: str
+    snippet: str
+    score: float = 0
+
+
+class SearchResponse(BaseModel):
+    query: str
+    results: List[SearchResult] = []
+    summary: Optional[str] = None
+{% endif %}
+
+{% if context.get("agents", False) %}
+# ── Agents ─────────────────────────────────────────────────────────
+class AgentRequest(BaseModel):
+    message: str = Field(..., min_length=1)
+    system_prompt: Optional[str] = None
+    max_iterations: int = Field(default=5, ge=1, le=20)
+
+
+class AgentResponse(BaseModel):
+    answer: str
+    tool_calls: List[Dict] = []
+    iterations: int = 0
+{% endif %}
+
+{% if context.get("session", False) %}
+# ── Sessions ───────────────────────────────────────────────────────
+class SessionCreateRequest(BaseModel):
+    user_id: Optional[str] = None
+
+
+class SessionResponse(BaseModel):
+    session_id: str
+    user_id: Optional[str] = None
+    created_at: float
+    message_count: int = 0
+
+
+class SessionHistoryResponse(BaseModel):
+    session_id: str
+    messages: List[Dict] = []
+{% endif %}
+
+
+# ── Common ─────────────────────────────────────────────────────────
+class HealthResponse(BaseModel):
+    status: str = "healthy"
+    version: str = "0.1.0"
+    features: Dict[str, bool] = {}
+
+
+class ErrorResponse(BaseModel):
+    detail: str
+    error_code: Optional[str] = None

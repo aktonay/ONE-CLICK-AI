@@ -1,0 +1,45 @@
+.PHONY: help dev prod test lint format clean docker-dev docker-prod
+
+help: ## Show this help
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+
+# ── Development ────────────────────────────────────────────────────
+dev: ## Start development server
+	uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+install: ## Install dependencies
+	uv sync
+
+test: ## Run tests
+	uv run pytest tests/ -v
+
+lint: ## Run linter
+	uv run ruff check .
+
+format: ## Format code
+	uv run ruff format .
+
+typecheck: ## Run type checker
+	uv run mypy app/ --ignore-missing-imports
+
+# ── Docker ─────────────────────────────────────────────────────────
+docker-dev: ## Start with Docker (development)
+	docker compose -f docker-compose.dev.yml up --build
+
+docker-prod: ## Start with Docker (production)
+	docker compose -f docker-compose.prod.yml up --build -d
+
+docker-stop: ## Stop all containers
+	docker compose -f docker-compose.dev.yml down
+	docker compose -f docker-compose.prod.yml down
+
+docker-logs: ## Show Docker logs
+	docker compose -f docker-compose.dev.yml logs -f
+
+# ── Utilities ──────────────────────────────────────────────────────
+clean: ## Clean cache files
+	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+	rm -rf .pytest_cache .mypy_cache .ruff_cache htmlcov .coverage
+
+health: ## Check service health
+	python scripts/health_check.py

@@ -1,0 +1,59 @@
+"""Image & video analysis endpoints."""
+
+from fastapi import APIRouter, UploadFile, File, HTTPException
+from typing import Optional
+from pydantic import BaseModel, Field
+
+router = APIRouter()
+
+
+class VisionAnalysisRequest(BaseModel):
+    prompt: str = Field(default="Describe this image in detail.")
+    model: Optional[str] = None
+
+
+@router.post("/analyze/image")
+async def analyze_image(
+    image: UploadFile = File(...),
+    prompt: str = "Describe this image in detail.",
+):
+    """
+    Analyse an uploaded image using a vision model (GPT-4o, Claude, Gemini …).
+    """
+    from app.services.vision_service import VisionService
+
+    try:
+        service = VisionService()
+        content = await image.read()
+        result = await service.analyze_image(
+            image_bytes=content,
+            prompt=prompt,
+            content_type=image.content_type or "image/jpeg",
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/analyze/video")
+async def analyze_video(
+    video: UploadFile = File(...),
+    prompt: str = "Summarise the key events in this video.",
+    frame_interval: int = 2,
+):
+    """
+    Analyse a video by extracting frames and processing with vision model.
+    """
+    from app.services.vision_service import VisionService
+
+    try:
+        service = VisionService()
+        content = await video.read()
+        result = await service.analyze_video(
+            video_bytes=content,
+            prompt=prompt,
+            frame_interval=frame_interval,
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

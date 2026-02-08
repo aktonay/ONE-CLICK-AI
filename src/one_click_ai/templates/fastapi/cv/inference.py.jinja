@@ -1,0 +1,59 @@
+{# CV Inference Pipeline #}
+"""
+Unified computer vision inference pipeline.
+"""
+
+import logging
+from typing import Any, Dict, List, Optional
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+
+class CVInferencePipeline:
+    """
+    Orchestrate multiple CV tasks: detection, segmentation, OCR, face, generation.
+    """
+
+    def __init__(self):
+        self.detectors = {}
+        self.segmenters = {}
+
+{% if yolo %}
+    def detect(self, image_path: str, model: str = "yolov8n", confidence: float = 0.5) -> Dict[str, Any]:
+        """Run YOLO object detection."""
+        from app.cv.yolo_detector import YOLODetector
+        if "yolo" not in self.detectors:
+            self.detectors["yolo"] = YOLODetector(model_name=model)
+        return self.detectors["yolo"].detect(image_path, confidence=confidence)
+{% endif %}
+
+{% if sam %}
+    def segment(self, image_path: str, points: List[List[int]] = None) -> Dict[str, Any]:
+        """Run SAM2 segmentation."""
+        from app.cv.sam_segmenter import SAMSegmenter
+        if "sam" not in self.segmenters:
+            self.segmenters["sam"] = SAMSegmenter()
+        return self.segmenters["sam"].segment(image_path, points=points)
+{% endif %}
+
+{% if ocr %}
+    def extract_text(self, image_path: str, lang: str = "en") -> Dict[str, Any]:
+        """Run OCR text extraction."""
+        from app.cv.ocr_engine import OCREngine
+        return OCREngine(lang=lang).extract(image_path)
+{% endif %}
+
+{% if face_detection %}
+    def detect_faces(self, image_path: str) -> Dict[str, Any]:
+        """Detect and recognize faces."""
+        from app.cv.face_detector import FaceDetector
+        return FaceDetector().detect(image_path)
+{% endif %}
+
+{% if image_gen %}
+    def generate_image(self, prompt: str, **kwargs) -> Dict[str, Any]:
+        """Generate image from text prompt."""
+        from app.cv.image_generator import ImageGenerator
+        return ImageGenerator().generate(prompt, **kwargs)
+{% endif %}

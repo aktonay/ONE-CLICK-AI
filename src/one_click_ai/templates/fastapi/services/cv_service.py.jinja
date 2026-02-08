@@ -1,0 +1,42 @@
+{# CV Service #}
+"""
+Computer Vision service layer.
+"""
+
+import logging
+from typing import Any, Dict, Optional
+from app.cv.inference import CVInferencePipeline
+
+logger = logging.getLogger(__name__)
+
+
+class CVService:
+    """High-level CV service for the API layer."""
+
+    def __init__(self):
+        self.pipeline = CVInferencePipeline()
+
+{% if yolo %}
+    async def detect(self, image_path: str, confidence: float = 0.5) -> Dict[str, Any]:
+        return self.pipeline.detect(image_path, confidence=confidence)
+{% endif %}
+
+{% if sam %}
+    async def segment(self, image_path: str, points=None) -> Dict[str, Any]:
+        return self.pipeline.segment(image_path, points=points)
+{% endif %}
+
+{% if ocr %}
+    async def ocr(self, image_path: str, lang: str = "en") -> Dict[str, Any]:
+        return self.pipeline.extract_text(image_path, lang=lang)
+{% endif %}
+
+{% if face_detection %}
+    async def detect_faces(self, image_path: str) -> Dict[str, Any]:
+        return self.pipeline.detect_faces(image_path)
+{% endif %}
+
+{% if image_gen %}
+    async def generate(self, prompt: str, **kwargs) -> Dict[str, Any]:
+        return self.pipeline.generate_image(prompt, **kwargs)
+{% endif %}

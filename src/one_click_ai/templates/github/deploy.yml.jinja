@@ -1,0 +1,193 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deployment target"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: {% raw %}${{ github.repository }}{% endraw %}
+
+jobs:
+  # ── Step 1: Build & push Docker image ──
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: {% raw %}${{ steps.meta.outputs.version }}{% endraw %}
+      image_digest: {% raw %}${{ steps.build.outputs.digest }}{% endraw %}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: {% raw %}${{ env.REGISTRY }}{% endraw %}
+          username: {% raw %}${{ github.actor }}{% endraw %}
+          password: {% raw %}${{ secrets.GITHUB_TOKEN }}{% endraw %}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: {% raw %}${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}{% endraw %}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{"{{"}}version{{"}}"}}
+            type=sha
+            type=raw,value=latest,enable={{"{{"}}is_default_branch{{"}}"}}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: {% raw %}${{ steps.meta.outputs.tags }}{% endraw %}
+          labels: {% raw %}${{ steps.meta.outputs.labels }}{% endraw %}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+  # ── Step 2: Deploy to chosen platform ──
+  {% if iac %}
+  deploy-server:
+    name: "Deploy to server (SSH)"
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: {% raw %}${{ startsWith(github.ref, 'refs/tags/v') || github.event.inputs.environment == 'production' }}{% endraw %}
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: {% raw %}${{ secrets.DEPLOY_HOST }}{% endraw %}
+          username: {% raw %}${{ secrets.DEPLOY_USER }}{% endraw %}
+          key: {% raw %}${{ secrets.DEPLOY_KEY }}{% endraw %}
+          script: |
+            cd /opt/{{ project_name }}
+            git pull origin main
+            docker compose -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+            sleep 5
+            curl -sf http://localhost:8000/api/v1/health || echo "Starting..."
+            docker system prune -f
+  {% endif %}
+
+  deploy-cloud-run:
+    name: "Deploy to GCP Cloud Run"
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: false  # Set to true to enable GCP Cloud Run deploy
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: {% raw %}${{ secrets.GCP_SA_KEY }}{% endraw %}
+
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: {{ project_name }}
+          image: {% raw %}${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest{% endraw %}
+          region: us-central1
+          flags: "--port=8000 --memory=1Gi --cpu=1 --allow-unauthenticated"
+
+  deploy-azure:
+    name: "Deploy to Azure Container Apps"
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: false  # Set to true to enable Azure deploy
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: {% raw %}${{ secrets.AZURE_CREDENTIALS }}{% endraw %}
+
+      - name: Deploy to Container Apps
+        uses: azure/container-apps-deploy-action@v2
+        with:
+          containerAppName: {{ project_name }}
+          resourceGroup: {{ project_name }}-rg
+          imageToDeploy: {% raw %}${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest{% endraw %}
+          targetPort: 8000
+
+  deploy-aws-ecs:
+    name: "Deploy to AWS ECS"
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: false  # Set to true to enable AWS ECS deploy
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: {% raw %}${{ secrets.AWS_ACCESS_KEY_ID }}{% endraw %}
+          aws-secret-access-key: {% raw %}${{ secrets.AWS_SECRET_ACCESS_KEY }}{% endraw %}
+          aws-region: us-east-1
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Push to ECR & deploy ECS
+        run: |
+          ECR_IMAGE="{% raw %}${{ steps.login-ecr.outputs.registry }}{% endraw %}/{{ project_name }}:latest"
+          docker pull {% raw %}${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest{% endraw %}
+          docker tag {% raw %}${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest{% endraw %} $ECR_IMAGE
+          docker push $ECR_IMAGE
+          aws ecs update-service \
+            --cluster {{ project_name }}-cluster \
+            --service {{ project_name }}-service \
+            --force-new-deployment
+
+  deploy-digitalocean:
+    name: "Deploy to DigitalOcean"
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: false  # Set to true to enable DO deploy
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: {% raw %}${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}{% endraw %}
+
+      - name: Deploy to App Platform
+        run: |
+          doctl apps create-deployment {% raw %}${{ secrets.DO_APP_ID }}{% endraw %} --wait

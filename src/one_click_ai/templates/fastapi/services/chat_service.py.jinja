@@ -1,0 +1,85 @@
+"""Chat service — manages LLM conversations."""
+
+from typing import AsyncIterator, Dict, List, Optional
+from app.core.ai.factory import get_llm_client
+{% if context.get("memory", False) %}
+from app.core.memory.short_term import ShortTermMemory
+{% endif %}
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class ChatService:
+    def __init__(self):
+        self.llm = get_llm_client()
+        {% if context.get("memory", False) %}
+        self.memory = ShortTermMemory()
+        {% endif %}
+
+    async def chat(
+        self,
+        message: str,
+        system_prompt: str = "You are a helpful AI assistant.",
+        session_id: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 2048,
+    ) -> Dict:
+        messages = [{"role": "system", "content": system_prompt}]
+
+        {% if context.get("memory", False) %}
+        if session_id:
+            history = await self.memory.get(session_id)
+            messages.extend(history)
+        {% endif %}
+
+        messages.append({"role": "user", "content": message})
+
+        result = await self.llm.chat(
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+        {% if context.get("memory", False) %}
+        if session_id:
+            await self.memory.add(session_id, {"role": "user", "content": message})
+            await self.memory.add(session_id, {"role": "assistant", "content": result["content"]})
+        {% endif %}
+
+        return result
+
+    {% if context.get("streaming", False) %}
+    async def chat_stream(
+        self,
+        message: str,
+        system_prompt: str = "You are a helpful AI assistant.",
+        session_id: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 2048,
+    ) -> AsyncIterator[str]:
+        messages = [{"role": "system", "content": system_prompt}]
+
+        {% if context.get("memory", False) %}
+        if session_id:
+            history = await self.memory.get(session_id)
+            messages.extend(history)
+        {% endif %}
+
+        messages.append({"role": "user", "content": message})
+
+        full_response = ""
+        async for chunk in self.llm.chat_stream(
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        ):
+            full_response += chunk
+            yield chunk
+
+        {% if context.get("memory", False) %}
+        if session_id:
+            await self.memory.add(session_id, {"role": "user", "content": message})
+            await self.memory.add(session_id, {"role": "assistant", "content": full_response})
+        {% endif %}
+    {% endif %}

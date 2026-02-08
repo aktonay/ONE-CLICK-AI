@@ -1,0 +1,47 @@
+"""RAG service — orchestrates the full retrieval-augmented generation flow."""
+
+from typing import Dict, List, Optional
+from app.core.rag.pipeline import RAGPipeline
+{% if context.get("memory", False) %}
+from app.core.memory.short_term import ShortTermMemory
+{% endif %}
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class RAGService:
+    def __init__(self):
+        self.pipeline = RAGPipeline()
+        {% if context.get("memory", False) %}
+        self.memory = ShortTermMemory()
+        {% endif %}
+
+    async def initialize(self):
+        await self.pipeline.initialize()
+
+    async def ingest(self, file_bytes: bytes, filename: str, metadata: Optional[Dict] = None) -> Dict:
+        result = await self.pipeline.ingest(file_bytes, filename, metadata)
+        return result
+
+    async def query(
+        self,
+        question: str,
+        top_k: int = 5,
+        session_id: Optional[str] = None,
+    ) -> Dict:
+        {% if context.get("memory", False) %}
+        history = []
+        if session_id:
+            history = await self.memory.get(session_id)
+        {% endif %}
+
+        result = await self.pipeline.query(question, top_k=top_k)
+
+        {% if context.get("memory", False) %}
+        if session_id:
+            await self.memory.add(session_id, {"role": "user", "content": question})
+            await self.memory.add(session_id, {"role": "assistant", "content": result.get("answer", "")})
+        {% endif %}
+
+        return result

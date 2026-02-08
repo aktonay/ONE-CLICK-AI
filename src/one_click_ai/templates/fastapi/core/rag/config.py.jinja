@@ -1,0 +1,21 @@
+"""RAG-specific configuration."""
+
+from pydantic_settings import BaseSettings
+from pydantic import Field
+
+
+class RAGConfig(BaseSettings):
+    EMBEDDING_MODEL: str = "{{ EMBEDDING_MODEL | default('text-embedding-3-small') }}"
+    EMBEDDING_DIMENSION: int = {{ EMBEDDING_DIMENSION | default(1536) }}
+    EMBEDDING_BATCH_SIZE: int = 100
+
+    CHUNK_SIZE: int = {{ CHUNK_SIZE | default(512) }}
+    CHUNK_OVERLAP: int = {{ CHUNK_OVERLAP | default(128) }}
+    CHUNKING_STRATEGY: str = "recursive"  # semantic | fixed | recursive
+
+    VECTOR_STORE_TYPE: str = "{{ vector_store }}"
+    TOP_K_RETRIEVAL: int = {{ TOP_K_RETRIEVAL | default(10) }}
+    SIMILARITY_THRESHOLD: float = 0.7
+    USE_RERANKING: bool = True
+
+    model_config = {"env_file": ".env", "extra": "ignore"}

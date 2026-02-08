@@ -1,0 +1,32 @@
+"""Request / response logging middleware."""
+
+from fastapi import Request
+import logging
+import time
+import uuid
+
+logger = logging.getLogger("app.access")
+
+
+async def logging_middleware(request: Request, call_next):
+    request_id = str(uuid.uuid4())[:8]
+    start = time.perf_counter()
+
+    # Attach request id
+    request.state.request_id = request_id
+
+    response = await call_next(request)
+
+    elapsed_ms = (time.perf_counter() - start) * 1000
+    logger.info(
+        "%s %s %s %.1fms [%s]",
+        request.method,
+        request.url.path,
+        response.status_code,
+        elapsed_ms,
+        request_id,
+    )
+
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Process-Time"] = f"{elapsed_ms:.1f}ms"
+    return response

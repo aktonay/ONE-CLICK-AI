@@ -1,0 +1,38 @@
+groups:
+  - name: {{ project_name }}_alerts
+    rules:
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate on {{ project_name }}"
+          description: "Error rate is above 10% for 5 minutes."
+
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High latency on {{ project_name }}"
+          description: "95th percentile latency is above 2s."
+
+      - alert: ServiceDown
+        expr: up{job="{{ project_name }}"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ project_name }} is down"
+          description: "Service has been unreachable for 1 minute."
+
+      - alert: HighMemoryUsage
+        expr: process_resident_memory_bytes / 1024 / 1024 > 1024
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage on {{ project_name }}"
+          description: "Memory usage exceeds 1GB."

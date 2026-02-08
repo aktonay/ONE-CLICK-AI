@@ -1,0 +1,59 @@
+"""RAG query endpoints."""
+
+from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional, Dict, List
+from pydantic import BaseModel, Field
+
+router = APIRouter()
+
+
+class RAGQueryRequest(BaseModel):
+    question: str = Field(..., min_length=1, max_length=10_000)
+    top_k: int = Field(default=10, ge=1, le=100)
+    filters: Optional[Dict] = None
+    use_reranking: bool = True
+{% if session %}
+    session_id: Optional[str] = None
+{% endif %}
+
+
+class SourceInfo(BaseModel):
+    source: str = ""
+    chunk_index: int = 0
+    score: float = 0.0
+
+
+class RAGQueryResponse(BaseModel):
+    answer: str
+    sources: List[SourceInfo] = []
+    model: str = ""
+
+
+@router.post("/query", response_model=RAGQueryResponse)
+async def rag_query(request: RAGQueryRequest):
+    """
+    Query your knowledge base using RAG (Retrieval-Augmented Generation).
+    """
+    from app.services.rag_service import RAGService
+
+    try:
+        service = RAGService()
+        result = await service.query(
+            question=request.question,
+            top_k=request.top_k,
+            filters=request.filters,
+            use_reranking=request.use_reranking,
+        )
+        return RAGQueryResponse(**result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/reindex")
+async def reindex():
+    """Trigger a full reindex of all documents."""
+    from app.services.rag_service import RAGService
+
+    service = RAGService()
+    count = await service.reindex_all()
+    return {"status": "success", "indexed_count": count}
