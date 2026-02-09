@@ -28,6 +28,11 @@ source_suffix = {
 
 # -- Options for HTML output -------------------------------------------------
 html_theme = 'sphinx_rtd_theme'
+
+# Custom CSS and JavaScript
+html_static_path = ['_static']
+html_css_files = ['custom.css']
+html_js_files = ['custom.js']
 html_static_path = ['_static']
 html_logo = None
 html_theme_options = {
