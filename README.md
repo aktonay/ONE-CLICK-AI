@@ -1,15 +1,15 @@
 <a name="top"></a>
 
-<!-- ![heading image](https://raw.githubusercontent.com/aktonay/one-click-ai/main/banner.gif) -->
+![One Click AI Spark Banner](https://raw.githubusercontent.com/aktonay/ONE-CLICK-AI/main/banner.svg)
 
-# 🤖 One Click AI (OCD-AI) 🚀
+# 🤖 One Click AI Spark 🚀
 
-**One Click AI** is a powerful CLI tool that generates **production-ready AI backend projects** in seconds — powered by FastAPI, with built-in LLM integration, RAG pipelines, voice, vision, emotion detection, AI agents, **ML training (PyTorch, TensorFlow, scikit-learn, XGBoost, LightGBM)**, **computer vision (YOLO, SAM2, OCR, face detection, image generation)**, **edge AI (ONNX, TensorRT, quantization)**, **LLM fine-tuning (LoRA/QLoRA)**, **AI guardrails (PII, content filter, prompt injection)**, **conversational analytics (Text-to-SQL)**, Docker, CI/CD, IaC, and full observability.
+**One Click AI Spark** is a powerful CLI tool that generates **production-ready AI backend projects** in seconds — powered by FastAPI, with built-in LLM integration, RAG pipelines, voice, vision, emotion detection, AI agents, **ML training (PyTorch, TensorFlow, scikit-learn, XGBoost, LightGBM)**, **computer vision (YOLO, SAM2, OCR, face detection, image generation)**, **edge AI (ONNX, TensorRT, quantization)**, **LLM fine-tuning (LoRA/QLoRA)**, **AI guardrails (PII, content filter, prompt injection)**, **conversational analytics (Text-to-SQL)**, Docker, CI/CD, IaC, and full observability.
 
-[![PyPI version](https://img.shields.io/pypi/v/one-click-ai)](https://pypi.org/project/one-click-ai/)
-[![Python versions](https://img.shields.io/pypi/pyversions/one-click-ai)](https://pypi.org/project/one-click-ai/)
-[![License](https://img.shields.io/github/license/aktonay/one-click-ai)](https://github.com/aktonay/one-click-ai/blob/main/LICENSE)
-[![GitHub Stars](https://img.shields.io/github/stars/aktonay/one-click-ai?style=social)](https://github.com/aktonay/one-click-ai)
+[![PyPI version](https://img.shields.io/pypi/v/one-click-ai-spark)](https://pypi.org/project/one-click-ai-spark/)
+[![Python versions](https://img.shields.io/pypi/pyversions/one-click-ai-spark)](https://pypi.org/project/one-click-ai-spark/)
+[![License](https://img.shields.io/github/license/aktonay/ONE-CLICK-AI)](https://github.com/aktonay/ONE-CLICK-AI/blob/main/LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/aktonay/ONE-CLICK-AI?style=social)](https://github.com/aktonay/ONE-CLICK-AI)
 
 ### 🛠️ Technology Stack
 
@@ -35,13 +35,13 @@
 ⭐ **Star us on GitHub** — your support motivates us a lot! 🙏😊
 
 [![Follow Mohammad Asif Khan](https://img.shields.io/badge/Follow-LinkedIn-0A66C2?logo=linkedin)](https://www.linkedin.com/in/mohammad-asif-khan-tonay-795b641b6)
-[![Share on LinkedIn](https://img.shields.io/badge/Share-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/sharing/share-offsite/?url=https://github.com/aktonay/one-click-ai)
+[![Share on LinkedIn](https://img.shields.io/badge/Share-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/sharing/share-offsite/?url=https://github.com/aktonay/ONE-CLICK-AI)
 
 ---
 
-> Stop copy-pasting boilerplate. Start building what matters.
+> ⚡ **Stop copy-pasting boilerplate. Start building what matters.** ⚡
 
-## 🌟 The Story Behind One Click AI
+## 🌟 The Story Behind One Click AI Spark
 
 Every time a new AI project starts, I see the same cycle — developers lose **days** reinventing the same infrastructure:
 

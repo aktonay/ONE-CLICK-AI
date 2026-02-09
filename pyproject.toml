@@ -1,6 +1,6 @@
 [project]
 name = "one-click-ai-spark"
-version = "0.3.0"
+version = "3.0.1"
 description = "One command to generate a production-ready AI/ML backend — LLM, RAG, Voice, Vision, Emotion, Agents, ML Training, Computer Vision, Edge AI & more"
 readme = "README.md"
 authors = [
